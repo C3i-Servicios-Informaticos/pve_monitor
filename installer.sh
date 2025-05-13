@@ -293,6 +293,23 @@ bantime = 100
 action = telegram
 EOF
 
+# Deshabilitar el jail de SSH si existe
+mensaje "info" "Deshabilitando jail de SSH..."
+if [ -f "/etc/fail2ban/jail.d/sshd.conf" ]; then
+    sed -i 's/enabled = true/enabled = false/' /etc/fail2ban/jail.d/sshd.conf
+    mensaje "ok" "Jail de SSH deshabilitado"
+elif [ -f "/etc/fail2ban/jail.d/defaults-debian.conf" ]; then
+    # En algunos sistemas Debian, la configuración de SSH está en defaults-debian.conf
+    sed -i '/\[sshd\]/,/^$/ s/enabled = true/enabled = false/' /etc/fail2ban/jail.d/defaults-debian.conf
+    mensaje "ok" "Jail de SSH deshabilitado en configuración Debian"
+fi
+
+# También verificar en jail.local, que podría tener configuración de SSH
+if [ -f "/etc/fail2ban/jail.local" ]; then
+    sed -i '/\[sshd\]/,/^$/ s/enabled = true/enabled = false/' /etc/fail2ban/jail.local
+    mensaje "ok" "Jail de SSH deshabilitado en jail.local si existía"
+fi
+
 if [ -f "/etc/fail2ban/jail.d/proxmox.conf" ]; then
     mensaje "ok" "Configuración de jail para Proxmox añadida"
 else
@@ -409,6 +426,26 @@ if systemctl is-active --quiet fail2ban; then
         else
             mensaje "error" "Jail de Proxmox no encontrado después de reinicio. Verificar configuración manualmente"
         fi
+    fi
+    
+    # Verificar que el jail de SSH esté deshabilitado
+    if fail2ban-client status | grep -q "sshd"; then
+        mensaje "aviso" "El jail de SSH está activo. Intentando deshabilitarlo..."
+        if [ -f "/etc/fail2ban/jail.d/sshd.conf" ]; then
+            sed -i 's/enabled = true/enabled = false/' /etc/fail2ban/jail.d/sshd.conf
+        fi
+        if [ -f "/etc/fail2ban/jail.local" ]; then
+            sed -i '/\[sshd\]/,/^$/ s/enabled = true/enabled = false/' /etc/fail2ban/jail.local
+        fi
+        systemctl restart fail2ban
+        sleep 2
+        if ! fail2ban-client status | grep -q "sshd"; then
+            mensaje "ok" "Jail de SSH deshabilitado correctamente"
+        else
+            mensaje "error" "No se pudo deshabilitar el jail de SSH. Revisa manualmente la configuración de fail2ban"
+        fi
+    else
+        mensaje "ok" "Jail de SSH deshabilitado correctamente"
     fi
 else
     mensaje "error" "Fail2ban no está funcionando correctamente"
