@@ -37,16 +37,28 @@ verificar_instalacion() {
     fi
 }
 
-# Función para pedir el token de Telegram (sin validación)
+# Función para pedir el token de Telegram
 pedir_token_telegram() {
-    read -p "Por favor, introduce el token del bot de Telegram: " BOT_TOKEN
-    mensaje "ok" "Token guardado"
+    echo -e "${AZUL}[?]${NORMAL} Por favor, introduce el token del bot de Telegram: "
+    read BOT_TOKEN
+    if [ -z "$BOT_TOKEN" ]; then
+        mensaje "error" "El token no puede estar vacío"
+        pedir_token_telegram
+    else
+        mensaje "ok" "Token guardado: $BOT_TOKEN"
+    fi
 }
 
-# Función para pedir el ID del chat de Telegram (sin validación)
+# Función para pedir el ID del chat de Telegram
 pedir_chat_id() {
-    read -p "Por favor, introduce el ID del chat de Telegram: " CHAT_ID
-    mensaje "ok" "ID de chat guardado"
+    echo -e "${AZUL}[?]${NORMAL} Por favor, introduce el ID del chat de Telegram: "
+    read CHAT_ID
+    if [ -z "$CHAT_ID" ]; then
+        mensaje "error" "El ID del chat no puede estar vacío"
+        pedir_chat_id
+    else
+        mensaje "ok" "ID del chat guardado: $CHAT_ID"
+    fi
 }
 
 # Función para reemplazar tokens en un archivo
@@ -59,17 +71,16 @@ reemplazar_token() {
         return 1
     fi
     
-    # Reemplazar BOT_TOKEN y CHAT_ID
+    # Reemplazar BOT_TOKEN y CHAT_ID con patrones más específicos para evitar sustituciones erróneas
     sed -i "s|BOT_TOKEN=\"\"|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    
-    # Para multi-action.sh, que podría usar TELEGRAM prefijo
-    sed -i "s|TELEGRAM_BOT_TOKEN=\"\"|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    sed -i "s|TELEGRAM_CHAT_ID=\"\"|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    
-    # Reemplazar en el formato correcto si existe
     sed -i "s|BOT_TOKEN=|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    sed -i "s|TELEGRAM_BOT_TOKEN=\"\"|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    sed -i "s|TELEGRAM_BOT_TOKEN=|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    
+    sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
     sed -i "s|CHAT_ID=|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    sed -i "s|TELEGRAM_CHAT_ID=\"\"|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    sed -i "s|TELEGRAM_CHAT_ID=|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
     
     mensaje "ok" "Tokens reemplazados en $archivo"
 }
@@ -156,9 +167,17 @@ fi
 # Solicitar información de Telegram
 echo ""
 mensaje "info" "Configuración de Telegram"
+BOT_TOKEN=""
+CHAT_ID=""
 pedir_token_telegram
 pedir_chat_id
 echo ""
+
+# Verificar que los tokens se ingresaron correctamente
+if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+    mensaje "error" "No se ingresaron correctamente los datos de Telegram. Por favor, ejecuta el script nuevamente."
+    exit 1
+fi
 
 # Función para copiar y configurar un archivo
 copiar_configurar_archivo() {
