@@ -37,30 +37,16 @@ verificar_instalacion() {
     fi
 }
 
-# Función para pedir y validar el token de Telegram
+# Función para pedir el token de Telegram (sin validación)
 pedir_token_telegram() {
-    while true; do
-        read -p "Por favor, introduce el token del bot de Telegram: " BOT_TOKEN
-        if [[ $BOT_TOKEN =~ ^[0-9]+:[a-zA-Z0-9_-]+$ ]]; then
-            mensaje "ok" "Token válido"
-            break
-        else
-            mensaje "error" "El formato del token no es válido. Debe ser similar a '123456789:ABC-DEF1234ghIkl-zyx57W2v1u123ew11'"
-        fi
-    done
+    read -p "Por favor, introduce el token del bot de Telegram: " BOT_TOKEN
+    mensaje "ok" "Token guardado"
 }
 
-# Función para pedir y validar el ID del chat de Telegram
+# Función para pedir el ID del chat de Telegram (sin validación)
 pedir_chat_id() {
-    while true; do
-        read -p "Por favor, introduce el ID del chat de Telegram: " CHAT_ID
-        if [[ $CHAT_ID =~ ^-?[0-9]+$ ]]; then
-            mensaje "ok" "ID de chat válido"
-            break
-        else
-            mensaje "error" "El ID del chat debe ser un número (puede incluir un signo negativo al principio)"
-        fi
-    done
+    read -p "Por favor, introduce el ID del chat de Telegram: " CHAT_ID
+    mensaje "ok" "ID de chat guardado"
 }
 
 # Función para reemplazar tokens en un archivo
@@ -106,7 +92,7 @@ echo ""
 mensaje "info" "Comprobando dependencias..."
 DEPS_MISSING=0
 
-for dep in jq fail2ban curl grep awk sed; do
+for dep in jq fail2ban-client curl grep awk sed; do
     if ! verificar_comando $dep; then
         DEPS_MISSING=1
     fi
