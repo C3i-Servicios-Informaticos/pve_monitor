@@ -459,6 +459,8 @@ fi
 # Configurar crontab para ssh_monitor
 mensaje "info" "Configurando cron para monitoreo SSH..."
 (crontab -l 2>/dev/null || echo "") | grep -v "/etc/pxe_monitor/ssh/ssh_monitor.sh" | { cat; echo "*/2 * * * * /etc/pxe_monitor/ssh/ssh_monitor.sh"; } | crontab -
+sed -i '/^MaxAuthTries /{s/.*/MaxAuthTries 6/;q};$aMaxAuthTries 6' /etc/ssh/sshd_config
+systemctl restart sshd
 mensaje "ok" "Tarea cron para monitoreo SSH configurada"
 
 # Verificar instalación
