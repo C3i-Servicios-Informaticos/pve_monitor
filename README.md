@@ -154,13 +154,7 @@ Las contribuciones son bienvenidas. Por favor, envíe sus pull requests o abra i
 
 ## Licencia
 
-Este proyecto está licenciado bajo la Licencia MIT - vea el archivo LICENSE para más detalles.
-
-## Agradecimientos
-
-- Equipo de Proxmox por su excelente plataforma de virtualización
-- Comunidad de fail2ban por sus herramientas de seguridad
-- Telegram por su API de bots que hace posible las notificaciones
+-
 
 ---
 
