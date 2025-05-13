@@ -65,11 +65,27 @@ pedir_chat_id() {
 
 # Función para reemplazar tokens en un archivo
 reemplazar_token() {
-    sed -i "s|BOT_TOKEN=\"\"|BOT_TOKEN=\"$BOT_TOKEN\"|g" $1
-    sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" $1
-    # Para multi-action.sh, que usa TELEGRAM prefijo
-    sed -i "s|TELEGRAM_BOT_TOKEN|BOT_TOKEN|g" $1
-    sed -i "s|TELEGRAM_CHAT_ID|CHAT_ID|g" $1
+    local archivo=$1
+    
+    # Asegurarse de que el archivo existe
+    if [ ! -f "$archivo" ]; then
+        mensaje "error" "El archivo $archivo no existe"
+        return 1
+    fi
+    
+    # Reemplazar BOT_TOKEN y CHAT_ID
+    sed -i "s|BOT_TOKEN=\"\"|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    
+    # Para multi-action.sh, que podría usar TELEGRAM prefijo
+    sed -i "s|TELEGRAM_BOT_TOKEN=\"\"|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    sed -i "s|TELEGRAM_CHAT_ID=\"\"|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    
+    # Reemplazar en el formato correcto si existe
+    sed -i "s|BOT_TOKEN=|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    sed -i "s|CHAT_ID=|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    
+    mensaje "ok" "Tokens reemplazados en $archivo"
 }
 
 # Verificar si se ejecuta como root
@@ -102,7 +118,7 @@ if [ $DEPS_MISSING -eq 1 ]; then
     apt install -y jq fail2ban curl
     
     # Verificar si se instalaron correctamente
-    if ! verificar_comando jq || ! verificar_comando fail2ban-client || ! verificar_comando curl; then
+    if ! verificar_comando jq || ! verificar_comando fail2ban || ! verificar_comando curl; then
         mensaje "error" "No se pudieron instalar todas las dependencias. Por favor, instálalas manualmente."
         exit 1
     fi
@@ -130,56 +146,41 @@ pedir_token_telegram
 pedir_chat_id
 echo ""
 
-# Descargar archivos
-mensaje "info" "Descargando archivos del repositorio..."
-
-# URLs base para los archivos
-REPO_URL="https://raw.githubusercontent.com/C3i-Servicios-Informaticos/pxe_monitor/main"
-
-# Función para descargar un archivo
-descargar_archivo() {
-    local ruta_destino=$1
-    local nombre_archivo=$2
-    local url_completa="${REPO_URL}/${ruta_destino}/${nombre_archivo}"
+# Función para copiar y configurar un archivo
+copiar_configurar_archivo() {
+    local origen=$1
+    local destino=$2
+    local nombre_archivo=$(basename "$origen")
     
-    if curl -s --head "$url_completa" | head -n 1 | grep "200" > /dev/null; then
-        curl -s "$url_completa" -o "/etc/pxe_monitor/${ruta_destino}/${nombre_archivo}"
-        mensaje "ok" "Archivo ${nombre_archivo} descargado correctamente"
-        
-        # Aplicar permisos si es un script
-        if [[ "$nombre_archivo" == *.sh ]]; then
-            chmod +x "/etc/pxe_monitor/${ruta_destino}/${nombre_archivo}"
-        fi
-        
-        # Reemplazar tokens
-        reemplazar_token "/etc/pxe_monitor/${ruta_destino}/${nombre_archivo}"
-        
-        return 0
-    else
-        mensaje "error" "No se pudo acceder a ${url_completa}"
-        return 1
+    cp "$origen" "$destino"
+    
+    # Si es un script, darle permisos de ejecución
+    if [[ "$nombre_archivo" == *.sh ]]; then
+        chmod +x "$destino/$nombre_archivo"
     fi
+    
+    # Reemplazar tokens en el archivo
+    reemplazar_token "$destino/$nombre_archivo"
 }
 
-# Descargar los archivos por categoría
-# pxe_backup
-descargar_archivo "pxe_backup" "backup_fail.service"
-descargar_archivo "pxe_backup" "bak_deal.sh"
+# Copiando los archivos proporcionados
+mensaje "info" "Copiando y configurando archivos..."
 
-# pxe_bruteforce
-descargar_archivo "pxe_bruteforce" "jail.local"
-descargar_archivo "pxe_bruteforce" "multi-action.sh"
-descargar_archivo "pxe_bruteforce" "telegram.conf"
+# Backup
+copiar_configurar_archivo "bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
+cp "backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
 
-# pxe_vm
-descargar_archivo "pxe_vm" "ping-instances.sh"
-descargar_archivo "pxe_vm" "vm_fail.service"
+# Bruteforce
+copiar_configurar_archivo "multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
+cp "jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
+cp "telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
 
-# ssh
-descargar_archivo "ssh" "ssh_monitor.sh"
+# VM Monitoring
+copiar_configurar_archivo "ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
+cp "vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 
-# README.md (en el directorio raíz)
-curl -s "${REPO_URL}/README.md" -o "/etc/pxe_monitor/README.md"
+# SSH Monitoring
+copiar_configurar_archivo "ssh_monitor.sh" "/etc/pxe_monitor/ssh"
 
 # Configurar fail2ban
 mensaje "info" "Configurando fail2ban..."
@@ -187,6 +188,8 @@ mensaje "info" "Configurando fail2ban..."
 # Crear acción personalizada para fail2ban
 if [ -f "/etc/pxe_monitor/pxe_bruteforce/telegram.conf" ]; then
     cp /etc/pxe_monitor/pxe_bruteforce/telegram.conf /etc/fail2ban/action.d/telegram.conf
+    # Actualizar la ruta del script multi-action.sh en la configuración
+    sed -i "s|/root/multi-action.sh|/etc/pxe_monitor/pxe_bruteforce/multi-action.sh|g" /etc/fail2ban/action.d/telegram.conf
     mensaje "ok" "Acción de Telegram configurada para fail2ban"
 fi
 
@@ -209,6 +212,8 @@ mensaje "info" "Configurando servicios..."
 
 # Servicio de backup
 if [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.service" ]; then
+    # Actualizar la ruta en el archivo de servicio
+    sed -i "s|ExecStart=.*|ExecStart=/etc/pxe_monitor/pxe_backup/bak_deal.sh|g" /etc/pxe_monitor/pxe_backup/backup_fail.service
     cp /etc/pxe_monitor/pxe_backup/backup_fail.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable backup_fail.service
@@ -218,6 +223,8 @@ fi
 
 # Servicio de monitoreo de VMs
 if [ -f "/etc/pxe_monitor/pxe_vm/vm_fail.service" ]; then
+    # Actualizar la ruta en el archivo de servicio
+    sed -i "s|ExecStart=.*|ExecStart=/etc/pxe_monitor/pxe_vm/ping-instances.sh|g" /etc/pxe_monitor/pxe_vm/vm_fail.service
     cp /etc/pxe_monitor/pxe_vm/vm_fail.service /etc/systemd/system/
     systemctl daemon-reload
     systemctl enable vm_fail.service
@@ -266,6 +273,16 @@ else
     mensaje "error" "Tarea cron para monitoreo SSH no configurada"
 fi
 
+# Enviar mensaje de prueba a Telegram
+mensaje "info" "Enviando mensaje de prueba a Telegram..."
+MENSAJE_PRUEBA="✅ Sistema PXE Monitor instalado correctamente en $(hostname)"
+curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" -d "chat_id=$CHAT_ID" -d "text=$MENSAJE_PRUEBA" > /dev/null
+if [ $? -eq 0 ]; then
+    mensaje "ok" "Mensaje de prueba enviado correctamente"
+else
+    mensaje "error" "No se pudo enviar el mensaje de prueba. Verifica los datos del bot y el chat ID"
+fi
+
 echo ""
 mensaje "info" "Resumen de la instalación:"
 echo "- Directorio principal: /etc/pxe_monitor"
@@ -273,6 +290,7 @@ echo "- Monitoreo de backups: Activo (servicio systemd)"
 echo "- Monitoreo de VMs: Activo (servicio systemd)"
 echo "- Protección contra fuerza bruta: Configurada (fail2ban)"
 echo "- Monitoreo SSH: Activo (crontab cada 2 minutos)"
+echo "- Bot de Telegram: Configurado"
 echo ""
 mensaje "ok" "¡Instalación completada con éxito!"
 echo "Puedes modificar los scripts en /etc/pxe_monitor si necesitas personalizar la configuración."
