@@ -140,8 +140,13 @@ fi
 
 # Clonar el repositorio de GitHub
 mensaje "info" "Clonando repositorio desde GitHub..."
-TEMP_DIR=$(mktemp -d)
-if git clone https://github.com/C3i-Servicios-Informaticos/pxe_monitor.git "$TEMP_DIR"; then
+REPO_DIR="./pxe_monitor"
+# Eliminar directorio si ya existe
+if [ -d "$REPO_DIR" ]; then
+    rm -rf "$REPO_DIR"
+fi
+
+if git clone https://github.com/C3i-Servicios-Informaticos/pxe_monitor.git "$REPO_DIR"; then
     mensaje "ok" "Repositorio clonado correctamente"
 else
     mensaje "error" "No se pudo clonar el repositorio. Saliendo..."
@@ -176,24 +181,24 @@ copiar_configurar_archivo() {
 mensaje "info" "Copiando y configurando archivos..."
 
 # Backup
-copiar_configurar_archivo "$TEMP_DIR/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
-cp "$TEMP_DIR/backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
+copiar_configurar_archivo "$REPO_DIR/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
+cp "$REPO_DIR/backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
 
 # Bruteforce
-copiar_configurar_archivo "$TEMP_DIR/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
-cp "$TEMP_DIR/jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
-cp "$TEMP_DIR/telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
+copiar_configurar_archivo "$REPO_DIR/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
+cp "$REPO_DIR/jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
+cp "$REPO_DIR/telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
 
 # VM Monitoring
-copiar_configurar_archivo "$TEMP_DIR/ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
-cp "$TEMP_DIR/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
+copiar_configurar_archivo "$REPO_DIR/ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
+cp "$REPO_DIR/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 
 # SSH Monitoring
-copiar_configurar_archivo "$TEMP_DIR/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
+copiar_configurar_archivo "$REPO_DIR/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
 
-# Limpiar directorio temporal
-rm -rf "$TEMP_DIR"
-mensaje "ok" "Archivos copiados y directorio temporal eliminado"
+# Limpiar directorio del repositorio
+rm -rf "$REPO_DIR"
+mensaje "ok" "Archivos copiados y directorio del repositorio eliminado"
 
 # Configurar fail2ban
 mensaje "info" "Configurando fail2ban..."
