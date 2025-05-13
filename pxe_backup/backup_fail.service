@@ -1,0 +1,13 @@
+```shell
+[Unit]
+Description=Script de backup
+After=network.target
+
+[Service]
+ExecStart=/etc/pxe_monitor/bak_deal.sh
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+```
