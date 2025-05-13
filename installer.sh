@@ -181,20 +181,20 @@ copiar_configurar_archivo() {
 mensaje "info" "Copiando y configurando archivos..."
 
 # Backup
-copiar_configurar_archivo "$REPO_DIR/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
-cp "$REPO_DIR/backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
+copiar_configurar_archivo "$REPO_DIR/pxe_backup/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
+cp "$REPO_DIR/pxe_backup/backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
 
 # Bruteforce
-copiar_configurar_archivo "$REPO_DIR/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
-cp "$REPO_DIR/jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
-cp "$REPO_DIR/telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
+copiar_configurar_archivo "$REPO_DIR/pxe_bruteforce/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
+cp "$REPO_DIR/pxe_bruteforce/jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
+cp "$REPO_DIR/pxe_bruteforce/telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
 
 # VM Monitoring
-copiar_configurar_archivo "$REPO_DIR/ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
-cp "$REPO_DIR/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
+copiar_configurar_archivo "$REPO_DIR/pxe_vm/ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
+cp "$REPO_DIR/pxe_vm/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 
 # SSH Monitoring
-copiar_configurar_archivo "$REPO_DIR/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
+copiar_configurar_archivo "$REPO_DIR/ssh/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
 
 # Limpiar directorio del repositorio
 rm -rf "$REPO_DIR"
