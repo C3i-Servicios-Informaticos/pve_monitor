@@ -261,26 +261,67 @@ else
     mensaje "error" "No se pudo crear el filtro de Proxmox"
 fi
 
-# Crear acción personalizada para fail2ban
-if [ -f "/etc/pxe_monitor/pxe_bruteforce/telegram.conf" ]; then
-    cp /etc/pxe_monitor/pxe_bruteforce/telegram.conf /etc/fail2ban/action.d/telegram.conf
-    # Actualizar la ruta del script multi-action.sh en la configuración
-    sed -i "s|/root/multi-action.sh|/etc/pxe_monitor/pxe_bruteforce/multi-action.sh|g" /etc/fail2ban/action.d/telegram.conf
+# Crear acción personalizada para fail2ban con corrección de logpath
+mensaje "info" "Configurando acción de Telegram para fail2ban..."
+cat > /etc/fail2ban/action.d/telegram.conf << EOF
+[Definition]
+actionstart =
+actionstop =
+actionban = /etc/pxe_monitor/pxe_bruteforce/multi-action.sh <ip>
+actionunban =
+logpath = /var/log/fail2ban.log
+EOF
+
+if [ -f "/etc/fail2ban/action.d/telegram.conf" ]; then
     mensaje "ok" "Acción de Telegram configurada para fail2ban"
+else
+    mensaje "error" "No se pudo configurar la acción de Telegram"
 fi
 
-# Configurar jail local
-if [ -f "/etc/pxe_monitor/pxe_bruteforce/jail.local" ]; then
-    cp /etc/pxe_monitor/pxe_bruteforce/jail.local /etc/fail2ban/jail.d/proxmox.conf
+# Configurar jail local con corrección de logpath
+mensaje "info" "Configurando jail para Proxmox..."
+cat > /etc/fail2ban/jail.d/proxmox.conf << EOF
+[proxmox]
+enabled = true
+port = https,http,8006
+filter = proxmox
+backend = systemd
+logpath = /var/log/daemon.log
+maxretry = 3
+# 1 hour
+bantime = 100
+action = telegram
+EOF
+
+if [ -f "/etc/fail2ban/jail.d/proxmox.conf" ]; then
     mensaje "ok" "Configuración de jail para Proxmox añadida"
+else
+    mensaje "error" "No se pudo configurar el jail para Proxmox"
 fi
+
+# Asegurar que todos los scripts tienen permisos de ejecución
+chmod +x /etc/pxe_monitor/pxe_backup/bak_deal.sh
+chmod +x /etc/pxe_monitor/pxe_bruteforce/multi-action.sh
+chmod +x /etc/pxe_monitor/pxe_vm/ping-instances.sh
+chmod +x /etc/pxe_monitor/ssh/ssh_monitor.sh
+mensaje "ok" "Permisos de scripts verificados"
 
 # Reiniciar fail2ban
 systemctl restart fail2ban
-if [ $? -eq 0 ]; then
+if systemctl is-active --quiet fail2ban; then
     mensaje "ok" "Servicio fail2ban reiniciado correctamente"
 else
-    mensaje "error" "No se pudo reiniciar el servicio fail2ban"
+    mensaje "error" "No se pudo reiniciar el servicio fail2ban. Verificando logs..."
+    journalctl -u fail2ban -n 5
+    # Intentar solucionar problemas comunes de fail2ban
+    touch /var/log/fail2ban.log
+    chmod 644 /var/log/fail2ban.log
+    systemctl restart fail2ban
+    if systemctl is-active --quiet fail2ban; then
+        mensaje "ok" "Servicio fail2ban reiniciado correctamente después de corrección adicional"
+    else
+        mensaje "error" "No se pudo reiniciar el servicio fail2ban. Verifica manualmente con 'journalctl -u fail2ban'"
+    fi
 fi
 
 # Configurar servicios systemd
@@ -294,7 +335,19 @@ if [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.service" ]; then
     systemctl daemon-reload
     systemctl enable backup_fail.service
     systemctl start backup_fail.service
-    mensaje "ok" "Servicio de backup configurado y activado"
+    if systemctl is-active --quiet backup_fail.service; then
+        mensaje "ok" "Servicio de backup configurado y activado"
+    else
+        mensaje "error" "No se pudo iniciar el servicio backup_fail. Verificando configuración..."
+        # Asegurar que el script de backup tiene los permisos correctos
+        chmod +x /etc/pxe_monitor/pxe_backup/bak_deal.sh
+        systemctl restart backup_fail.service
+        if systemctl is-active --quiet backup_fail.service; then
+            mensaje "ok" "Servicio de backup configurado y activado después de corrección"
+        else
+            mensaje "error" "No se pudo iniciar el servicio backup_fail. Verifica manualmente con 'journalctl -u backup_fail'"
+        fi
+    fi
 fi
 
 # Servicio de monitoreo de VMs
@@ -305,7 +358,19 @@ if [ -f "/etc/pxe_monitor/pxe_vm/vm_fail.service" ]; then
     systemctl daemon-reload
     systemctl enable vm_fail.service
     systemctl start vm_fail.service
-    mensaje "ok" "Servicio de monitoreo de VMs configurado y activado"
+    if systemctl is-active --quiet vm_fail.service; then
+        mensaje "ok" "Servicio de monitoreo de VMs configurado y activado"
+    else
+        mensaje "error" "No se pudo iniciar el servicio vm_fail. Verificando configuración..."
+        # Asegurar que el script tiene los permisos correctos
+        chmod +x /etc/pxe_monitor/pxe_vm/ping-instances.sh
+        systemctl restart vm_fail.service
+        if systemctl is-active --quiet vm_fail.service; then
+            mensaje "ok" "Servicio de monitoreo de VMs configurado y activado después de corrección"
+        else
+            mensaje "error" "No se pudo iniciar el servicio vm_fail. Verifica manualmente con 'journalctl -u vm_fail'"
+        fi
+    fi
 fi
 
 # Configurar crontab para ssh_monitor
@@ -331,15 +396,23 @@ else
 fi
 
 # Verificar fail2ban
-if fail2ban-client status | grep -q "Number of jail:"; then
+if systemctl is-active --quiet fail2ban; then
     mensaje "ok" "Fail2ban está funcionando correctamente"
     if fail2ban-client status | grep -q "proxmox"; then
         mensaje "ok" "Jail de Proxmox configurado correctamente"
     else
-        mensaje "aviso" "Jail de Proxmox no encontrado en fail2ban"
+        mensaje "aviso" "Jail de Proxmox no encontrado en fail2ban. Reiniciando servicio..."
+        systemctl restart fail2ban
+        sleep 2
+        if fail2ban-client status | grep -q "proxmox"; then
+            mensaje "ok" "Jail de Proxmox configurado correctamente después de reinicio"
+        else
+            mensaje "error" "Jail de Proxmox no encontrado después de reinicio. Verificar configuración manualmente"
+        fi
     fi
 else
     mensaje "error" "Fail2ban no está funcionando correctamente"
+    journalctl -u fail2ban -n 5
 fi
 
 # Verificar filtro de Proxmox
