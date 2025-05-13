@@ -292,17 +292,6 @@ else
     mensaje "error" "No se pudo crear el filtro de Proxmox"
 fi
 
-# Crear acción personalizada para fail2ban con corrección de logpath
-mensaje "info" "Configurando acción de Telegram para fail2ban..."
-cat > /etc/fail2ban/action.d/telegram.conf << EOF
-[Definition]
-actionstart =
-actionstop =
-actionban = /etc/pxe_monitor/pxe_bruteforce/multi-action.sh <ip>
-actionunban =
-logpath = /var/log/fail2ban.log
-EOF
-
 if [ -f "/etc/fail2ban/action.d/telegram.conf" ]; then
     mensaje "ok" "Acción de Telegram configurada para fail2ban"
 else
@@ -325,7 +314,6 @@ enabled = true
 port = https,http,8006
 filter = proxmox
 backend = systemd
-logpath = /var/log/daemon.log
 maxretry = 3
 bantime = 100
 action = telegram
@@ -345,27 +333,6 @@ if [ -f "/etc/fail2ban/jail.local" ]; then
     mensaje "ok" "Archivo jail.local creado correctamente en /etc/fail2ban/"
 else
     mensaje "error" "No se pudo crear el archivo jail.local en /etc/fail2ban/"
-fi
-
-# Configurar jail para Proxmox en jail.d
-mensaje "info" "Configurando jail para Proxmox en jail.d..."
-mkdir -p /etc/fail2ban/jail.d/
-cat > /etc/fail2ban/jail.d/proxmox.conf << EOF
-[proxmox]
-enabled = true
-port = https,http,8006
-filter = proxmox
-backend = systemd
-logpath = /var/log/daemon.log
-maxretry = 3
-bantime = 100
-action = telegram
-EOF
-
-if [ -f "/etc/fail2ban/jail.d/proxmox.conf" ]; then
-    mensaje "ok" "Configuración de jail para Proxmox añadida en jail.d"
-else
-    mensaje "error" "No se pudo configurar el jail para Proxmox en jail.d"
 fi
 
 # Asegurar que todos los scripts tienen permisos de ejecución
