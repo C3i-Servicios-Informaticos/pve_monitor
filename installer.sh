@@ -278,8 +278,47 @@ else
     mensaje "error" "No se pudo configurar la acción de Telegram"
 fi
 
-# Configurar jail local con corrección de logpath
-mensaje "info" "Configurando jail para Proxmox..."
+# Crear jail.local directamente en /etc/fail2ban/
+mensaje "info" "Creando archivo jail.local principal en /etc/fail2ban/..."
+cat > /etc/fail2ban/jail.local << EOF
+[DEFAULT]
+# "ignoreip" puede ser una dirección IP, una máscara CIDR o un host DNS
+ignoreip = 127.0.0.1/8
+bantime = 600
+maxretry = 3
+# Cambiamos el backend a systemd para mejorar el rendimiento
+backend = systemd
+
+[proxmox]
+enabled = true
+port = https,http,8006
+filter = proxmox
+backend = systemd
+logpath = /var/log/daemon.log
+maxretry = 3
+bantime = 100
+action = telegram
+
+# Configuración de SSH con backend systemd
+[sshd]
+enabled = false
+filter = sshd
+port = ssh
+backend = systemd
+maxretry = 5
+findtime = 600
+bantime = 600
+EOF
+
+if [ -f "/etc/fail2ban/jail.local" ]; then
+    mensaje "ok" "Archivo jail.local creado correctamente en /etc/fail2ban/"
+else
+    mensaje "error" "No se pudo crear el archivo jail.local en /etc/fail2ban/"
+fi
+
+# Configurar jail para Proxmox en jail.d
+mensaje "info" "Configurando jail para Proxmox en jail.d..."
+mkdir -p /etc/fail2ban/jail.d/
 cat > /etc/fail2ban/jail.d/proxmox.conf << EOF
 [proxmox]
 enabled = true
@@ -288,15 +327,14 @@ filter = proxmox
 backend = systemd
 logpath = /var/log/daemon.log
 maxretry = 3
-# 1 hour
 bantime = 100
 action = telegram
 EOF
 
 if [ -f "/etc/fail2ban/jail.d/proxmox.conf" ]; then
-    mensaje "ok" "Configuración de jail para Proxmox añadida"
+    mensaje "ok" "Configuración de jail para Proxmox añadida en jail.d"
 else
-    mensaje "error" "No se pudo configurar el jail para Proxmox"
+    mensaje "error" "No se pudo configurar el jail para Proxmox en jail.d"
 fi
 
 # Asegurar que todos los scripts tienen permisos de ejecución
@@ -395,6 +433,13 @@ else
     mensaje "error" "Servicio vm_fail no está activo"
 fi
 
+# Verificar jail.local
+if [ -f "/etc/fail2ban/jail.local" ]; then
+    mensaje "ok" "Archivo jail.local creado correctamente en /etc/fail2ban/"
+else
+    mensaje "error" "El archivo jail.local no existe en /etc/fail2ban/"
+fi
+
 # Verificar fail2ban
 if systemctl is-active --quiet fail2ban; then
     mensaje "ok" "Fail2ban está funcionando correctamente"
@@ -455,6 +500,7 @@ echo "- Protección contra fuerza bruta: Configurada (fail2ban)"
 echo "- Filtro de Proxmox: Configurado"
 echo "- Monitoreo SSH: Activo (crontab cada 2 minutos)"
 echo "- Bot de Telegram: Configurado"
+echo "- Fail2ban con backend systemd: Configurado"
 echo ""
 mensaje "ok" "¡Instalación completada con éxito!"
 echo "Puedes modificar los scripts en /etc/pxe_monitor si necesitas personalizar la configuración."
