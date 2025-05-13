@@ -234,24 +234,6 @@ cp "$REPO_DIR/pxe_vm/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 # SSH Monitoring
 copiar_configurar_archivo "$REPO_DIR/ssh/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
 
-# Modificar el script ssh_monitor.sh para adaptarlo a la configuración del sistema
-mensaje "info" "Adaptando script de monitoreo SSH para esta instalación..."
-# Comprobar la ruta real del log de autenticación en este sistema
-AUTH_LOG_PATH=""
-if [ -f "/var/log/auth.log" ]; then
-    AUTH_LOG_PATH="/var/log/auth.log"
-elif [ -f "/var/log/secure" ]; then
-    AUTH_LOG_PATH="/var/log/secure"
-fi
-
-# Si encontramos una ruta válida, actualizar el script
-if [ -n "$AUTH_LOG_PATH" ]; then
-    sed -i "s|logf=\"/var/log/auth.log\"|logf=\"$AUTH_LOG_PATH\"|g" /etc/pxe_monitor/ssh/ssh_monitor.sh
-    mensaje "ok" "Script ssh_monitor.sh actualizado para usar $AUTH_LOG_PATH"
-else
-    mensaje "aviso" "No se encontró archivo de log de autenticación, se usará la configuración predeterminada"
-fi
-
 # Limpiar directorio del repositorio
 rm -rf "$REPO_DIR"
 mensaje "ok" "Archivos copiados y directorio del repositorio eliminado"
@@ -393,37 +375,6 @@ fi
 
 # Configurar crontab para ssh_monitor
 mensaje "info" "Configurando cron para monitoreo SSH..."
-# Corregir problema con la ruta del log SSH en Debian
-mensaje "info" "Corrigiendo ruta del log SSH (bug conocido en Debian)..."
-
-# Verificar si existe el archivo auth.log
-if [ ! -f "/var/log/auth.log" ]; then
-    mensaje "aviso" "El archivo /var/log/auth.log no existe, creándolo..."
-    touch /var/log/auth.log
-    chmod 640 /var/log/auth.log
-    chown root:adm /var/log/auth.log
-    mensaje "ok" "Archivo auth.log creado correctamente"
-fi
-
-# Modificar el script ssh_monitor.sh para usar la ruta correcta
-if [ -f "/etc/pxe_monitor/ssh/ssh_monitor.sh" ]; then
-    # Verificar si rsyslog está instalado
-    if command -v rsyslogd &> /dev/null; then
-        mensaje "info" "Configurando rsyslog para escribir en auth.log..."
-        # Asegurar que rsyslog escribe en auth.log
-        if [ ! -f "/etc/rsyslog.d/50-default.conf.bak" ]; then
-            cp /etc/rsyslog.d/50-default.conf /etc/rsyslog.d/50-default.conf.bak
-        fi
-        
-        # Añadir configuración para auth.log si no existe
-        if ! grep -q "auth,authpriv.*/var/log/auth.log" /etc/rsyslog.d/50-default.conf; then
-            echo "auth,authpriv.*                 /var/log/auth.log" >> /etc/rsyslog.d/50-default.conf
-            systemctl restart rsyslog
-            mensaje "ok" "Rsyslog configurado para escribir en auth.log"
-        fi
-    fi
-fi
-
 (crontab -l 2>/dev/null || echo "") | grep -v "/etc/pxe_monitor/ssh/ssh_monitor.sh" | { cat; echo "*/2 * * * * /etc/pxe_monitor/ssh/ssh_monitor.sh"; } | crontab -
 mensaje "ok" "Tarea cron para monitoreo SSH configurada"
 
