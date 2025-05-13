@@ -234,45 +234,22 @@ cp "$REPO_DIR/pxe_vm/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 # SSH Monitoring
 copiar_configurar_archivo "$REPO_DIR/ssh/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
 
-# Corregir la ruta del log de SSH en el script de monitoreo
-mensaje "info" "Corrigiendo ruta del log SSH en el script de monitoreo..."
-if [ -f "/etc/pxe_monitor/ssh/ssh_monitor.sh" ]; then
-    # Verificar qué archivo de log SSH existe en el sistema
-    SSH_LOG_PATH=""
-    
-    # Opciones comunes de ubicación del log SSH
-    for log_path in "/var/log/auth.log" "/var/log/secure" "/var/log/audit/audit.log"; do
-        if [ -f "$log_path" ]; then
-            SSH_LOG_PATH="$log_path"
-            break
-        fi
-    done
-    
-    # Si ninguna ubicación estándar funciona, usar journalctl
-    if [ -z "$SSH_LOG_PATH" ]; then
-        mensaje "aviso" "No se encontró archivo de log SSH estándar, se usará journalctl"
-        # Crear un script auxiliar para extraer logs de SSH mediante journalctl
-        cat > /etc/pxe_monitor/ssh/extract_ssh_log.sh << EOF
-#!/bin/bash
-# Script para extraer logs SSH de journalctl
-journalctl -u ssh -u sshd --no-pager -n 1000 > /var/log/ssh_extract.log
-EOF
-        chmod +x /etc/pxe_monitor/ssh/extract_ssh_log.sh
-        
-        # Modificar el crontab para ejecutar primero el extractor y luego el monitor
-        (crontab -l 2>/dev/null || echo "") | grep -v "/etc/pxe_monitor/ssh/" | { cat; echo "*/2 * * * * /etc/pxe_monitor/ssh/extract_ssh_log.sh && /etc/pxe_monitor/ssh/ssh_monitor.sh"; } | crontab -
-        
-        # Crear el archivo de log inicial
-        /etc/pxe_monitor/ssh/extract_ssh_log.sh
-        SSH_LOG_PATH="/var/log/ssh_extract.log"
-        mensaje "ok" "Creado script extractor de logs SSH y archivo de log en $SSH_LOG_PATH"
-    else
-        mensaje "ok" "Encontrado archivo de log SSH en $SSH_LOG_PATH"
-    fi
-    
-    # Modificar el script de monitoreo SSH para usar la ruta correcta
-    sed -i "s|logf=\"/var/log/auth.log\"|logf=\"$SSH_LOG_PATH\"|g" /etc/pxe_monitor/ssh/ssh_monitor.sh
-    mensaje "ok" "Ruta del log SSH actualizada en el script de monitoreo"
+# Modificar el script ssh_monitor.sh para adaptarlo a la configuración del sistema
+mensaje "info" "Adaptando script de monitoreo SSH para esta instalación..."
+# Comprobar la ruta real del log de autenticación en este sistema
+AUTH_LOG_PATH=""
+if [ -f "/var/log/auth.log" ]; then
+    AUTH_LOG_PATH="/var/log/auth.log"
+elif [ -f "/var/log/secure" ]; then
+    AUTH_LOG_PATH="/var/log/secure"
+fi
+
+# Si encontramos una ruta válida, actualizar el script
+if [ -n "$AUTH_LOG_PATH" ]; then
+    sed -i "s|logf=\"/var/log/auth.log\"|logf=\"$AUTH_LOG_PATH\"|g" /etc/pxe_monitor/ssh/ssh_monitor.sh
+    mensaje "ok" "Script ssh_monitor.sh actualizado para usar $AUTH_LOG_PATH"
+else
+    mensaje "aviso" "No se encontró archivo de log de autenticación, se usará la configuración predeterminada"
 fi
 
 # Limpiar directorio del repositorio
@@ -416,6 +393,37 @@ fi
 
 # Configurar crontab para ssh_monitor
 mensaje "info" "Configurando cron para monitoreo SSH..."
+# Corregir problema con la ruta del log SSH en Debian
+mensaje "info" "Corrigiendo ruta del log SSH (bug conocido en Debian)..."
+
+# Verificar si existe el archivo auth.log
+if [ ! -f "/var/log/auth.log" ]; then
+    mensaje "aviso" "El archivo /var/log/auth.log no existe, creándolo..."
+    touch /var/log/auth.log
+    chmod 640 /var/log/auth.log
+    chown root:adm /var/log/auth.log
+    mensaje "ok" "Archivo auth.log creado correctamente"
+fi
+
+# Modificar el script ssh_monitor.sh para usar la ruta correcta
+if [ -f "/etc/pxe_monitor/ssh/ssh_monitor.sh" ]; then
+    # Verificar si rsyslog está instalado
+    if command -v rsyslogd &> /dev/null; then
+        mensaje "info" "Configurando rsyslog para escribir en auth.log..."
+        # Asegurar que rsyslog escribe en auth.log
+        if [ ! -f "/etc/rsyslog.d/50-default.conf.bak" ]; then
+            cp /etc/rsyslog.d/50-default.conf /etc/rsyslog.d/50-default.conf.bak
+        fi
+        
+        # Añadir configuración para auth.log si no existe
+        if ! grep -q "auth,authpriv.*/var/log/auth.log" /etc/rsyslog.d/50-default.conf; then
+            echo "auth,authpriv.*                 /var/log/auth.log" >> /etc/rsyslog.d/50-default.conf
+            systemctl restart rsyslog
+            mensaje "ok" "Rsyslog configurado para escribir en auth.log"
+        fi
+    fi
+fi
+
 (crontab -l 2>/dev/null || echo "") | grep -v "/etc/pxe_monitor/ssh/ssh_monitor.sh" | { cat; echo "*/2 * * * * /etc/pxe_monitor/ssh/ssh_monitor.sh"; } | crontab -
 mensaje "ok" "Tarea cron para monitoreo SSH configurada"
 
@@ -475,21 +483,6 @@ if crontab -l | grep -q "/etc/pxe_monitor/ssh/ssh_monitor.sh"; then
     mensaje "ok" "Tarea cron para monitoreo SSH configurada correctamente"
 else
     mensaje "error" "Tarea cron para monitoreo SSH no configurada"
-fi
-
-# Verificar la ruta del log de SSH
-SSH_LOG_PATH=$(grep "logf=" /etc/pxe_monitor/ssh/ssh_monitor.sh | cut -d'"' -f2)
-if [ -f "$SSH_LOG_PATH" ]; then
-    mensaje "ok" "Archivo de log SSH ($SSH_LOG_PATH) encontrado y accesible"
-else
-    mensaje "aviso" "El archivo de log SSH ($SSH_LOG_PATH) no existe. Creando archivo vacío..."
-    touch "$SSH_LOG_PATH"
-    chmod 644 "$SSH_LOG_PATH"
-    if [ -f "$SSH_LOG_PATH" ]; then
-        mensaje "ok" "Archivo de log SSH creado correctamente"
-    else
-        mensaje "error" "No se pudo crear el archivo de log SSH. Verifica permisos."
-    fi
 fi
 
 # Enviar mensaje de prueba a Telegram
