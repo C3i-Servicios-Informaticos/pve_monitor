@@ -1,7 +1,7 @@
 #!/bin/bash
 
-BOT_TOKEN="8049940826:AAE5VQeKv29pmeOZDjylC-JGkCghPntGkmg"
-CHAT_ID="-4716952882"
+BOT_TOKEN=""
+CHAT_ID=""
 primero=$(ps -aux | grep -i vzdump | grep -v grep)
 #Comprueba si se esta realizando una copia de seguridad
 if [ -z "$primero" ]; then
