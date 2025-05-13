@@ -292,6 +292,7 @@ else
     mensaje "error" "No se pudo crear el filtro de Proxmox"
 fi
 
+cp "/etc/pxe_monitor/pxe_bruteforce/telegram.conf" "/etc/fail2ban/action.d/"
 if [ -f "/etc/fail2ban/action.d/telegram.conf" ]; then
     mensaje "ok" "Acción de Telegram configurada para fail2ban"
 else
