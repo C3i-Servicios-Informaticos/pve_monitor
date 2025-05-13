@@ -1,8 +1,8 @@
 #!/bin/bash
 # Variables al principio
 IP=$1
-TELEGRAM_BOT_TOKEN=""
-TELEGRAM_CHAT_ID=""
+BOT_TOKEN=""
+CHAT_ID=""
 PORT=8006
 
 #BLOQUEA LA IP AL PUERTO 8006
