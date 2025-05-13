@@ -28,10 +28,14 @@ Todas las alertas se envían a través de Telegram, permitiendo una respuesta r�
 
 ## Instalación rápida
 
-Para instalar PXE Monitor, ejecute el siguiente comando como administrador:
+Para instalar PXE Monitor, descarga y ejecuta installer.sh
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/C3i-Servicios-Informaticos/pxe_monitor/main/installer.sh | bash
+curl -sSL https://raw.githubusercontent.com/C3i-Servicios-Informaticos/pxe_monitor/main/installer.sh -o installer.sh
+
+chmod +x installer.sh
+
+./installer.sh
 ```
 
 Durante la instalación, se le solicitará:
