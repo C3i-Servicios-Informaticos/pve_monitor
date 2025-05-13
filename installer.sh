@@ -90,7 +90,7 @@ echo ""
 mensaje "info" "Comprobando dependencias..."
 DEPS_MISSING=0
 
-for dep in jq fail2ban curl grep awk sed; do
+for dep in jq fail2ban-client curl grep awk sed; do
     if ! verificar_comando $dep; then
         DEPS_MISSING=1
     fi
