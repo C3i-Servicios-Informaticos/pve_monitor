@@ -220,7 +220,6 @@ mensaje "info" "Copiando y configurando archivos..."
 
 # Backup
 copiar_configurar_archivo "$REPO_DIR/pxe_backup/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
-cp "$REPO_DIR/pxe_backup/backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
 
 # Bruteforce
 copiar_configurar_archivo "$REPO_DIR/pxe_bruteforce/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
@@ -233,6 +232,38 @@ cp "$REPO_DIR/pxe_vm/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 
 # SSH Monitoring
 copiar_configurar_archivo "$REPO_DIR/ssh/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
+
+# Crear los archivos de servicio y temporizador de backup
+mensaje "info" "Creando archivos de servicio y temporizador para monitoreo de backups..."
+
+# Crear el archivo backup_fail.service con la nueva configuración
+cat > /etc/pxe_monitor/pxe_backup/backup_fail.service << EOF
+[Unit]
+Description=Script de monitoreo de backups
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/etc/pxe_monitor/pxe_backup/bak_deal.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Crear el archivo backup_fail.timer
+cat > /etc/pxe_monitor/pxe_backup/backup_fail.timer << EOF
+[Unit]
+Description=Ejecuta el monitoreo de backups cada 2 minutos
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Unit=backup_fail.service
+
+[Install]
+WantedBy=timers.target
+EOF
 
 # Limpiar directorio del repositorio
 rm -rf "$REPO_DIR"
@@ -372,27 +403,34 @@ fi
 # Configurar servicios systemd
 mensaje "info" "Configurando servicios..."
 
-# Servicio de backup
-if [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.service" ]; then
-    # Actualizar la ruta en el archivo de servicio
-    sed -i "s|ExecStart=.*|ExecStart=/etc/pxe_monitor/pxe_backup/bak_deal.sh|g" /etc/pxe_monitor/pxe_backup/backup_fail.service
+# Servicio y temporizador de backup
+if [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.service" ] && [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.timer" ]; then
+    # Copiar archivos al directorio de systemd
     cp /etc/pxe_monitor/pxe_backup/backup_fail.service /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable backup_fail.service
-    systemctl start backup_fail.service
+    cp /etc/pxe_monitor/pxe_backup/backup_fail.timer /etc/systemd/system/
+    
+    # Detener y deshabilitar el servicio anterior si existe
     if systemctl is-active --quiet backup_fail.service; then
-        mensaje "ok" "Servicio de backup configurado y activado"
-    else
-        mensaje "error" "No se pudo iniciar el servicio backup_fail. Verificando configuración..."
-        # Asegurar que el script de backup tiene los permisos correctos
-        chmod +x /etc/pxe_monitor/pxe_backup/bak_deal.sh
-        systemctl restart backup_fail.service
-        if systemctl is-active --quiet backup_fail.service; then
-            mensaje "ok" "Servicio de backup configurado y activado después de corrección"
-        else
-            mensaje "error" "No se pudo iniciar el servicio backup_fail. Verifica manualmente con 'journalctl -u backup_fail'"
-        fi
+        systemctl stop backup_fail.service
     fi
+    if systemctl is-enabled --quiet backup_fail.service; then
+        systemctl disable backup_fail.service
+    fi
+    
+    # Habilitar y arrancar el temporizador
+    systemctl daemon-reload
+    systemctl enable backup_fail.timer
+    systemctl start backup_fail.timer
+    
+    if systemctl is-active --quiet backup_fail.timer; then
+        mensaje "ok" "Servicio y temporizador de backup configurados y activados"
+    else
+        mensaje "error" "No se pudo iniciar el temporizador backup_fail. Verificando configuración..."
+        # Mostrar los logs para diagnosticar el problema
+        journalctl -u backup_fail.timer -n 10
+    fi
+else
+    mensaje "error" "No se encontraron los archivos de configuración del servicio y temporizador"
 fi
 
 # Servicio de monitoreo de VMs
@@ -428,10 +466,13 @@ echo ""
 mensaje "info" "Verificando la instalación..."
 
 # Verificar servicios
-if systemctl is-active --quiet backup_fail.service; then
-    mensaje "ok" "Servicio backup_fail está activo"
+if systemctl is-active --quiet backup_fail.timer; then
+    mensaje "ok" "Temporizador backup_fail está activo"
 else
-    mensaje "error" "Servicio backup_fail no está activo"
+    mensaje "error" "Temporizador backup_fail no está activo"
+    # Intentar diagnosticar el problema
+    mensaje "info" "Consultando estado del temporizador..."
+    systemctl status backup_fail.timer
 fi
 
 if systemctl is-active --quiet vm_fail.service; then
@@ -501,7 +542,7 @@ fi
 echo ""
 mensaje "info" "Resumen de la instalación:"
 echo "- Directorio principal: /etc/pxe_monitor"
-echo "- Monitoreo de backups: Activo (servicio systemd)"
+echo "- Monitoreo de backups: Activo (temporizador systemd cada 2 minutos)"
 echo "- Monitoreo de VMs: Activo (servicio systemd)"
 echo "- Protección contra fuerza bruta: Configurada (fail2ban)"
 echo "- Filtro de Proxmox: Configurado"
