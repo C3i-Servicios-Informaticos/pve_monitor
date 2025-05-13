@@ -1,0 +1,10 @@
+[Unit]
+Description=Ejecuta el monitoreo de backups cada 2 minutos
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Unit=backup_fail.service
+
+[Install]
+WantedBy=timers.target
