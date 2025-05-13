@@ -344,6 +344,13 @@ chmod +x /etc/pxe_monitor/pxe_vm/ping-instances.sh
 chmod +x /etc/pxe_monitor/ssh/ssh_monitor.sh
 mensaje "ok" "Permisos de scripts verificados"
 
+# Eliminar archivo defaults-debian.conf que puede interferir con nuestra configuración
+if [ -f "/etc/fail2ban/jail.d/defaults-debian.conf" ]; then
+    mensaje "info" "Eliminando archivo defaults-debian.conf..."
+    rm -f /etc/fail2ban/jail.d/defaults-debian.conf
+    mensaje "ok" "Archivo defaults-debian.conf eliminado correctamente"
+fi
+
 # Reiniciar fail2ban
 systemctl restart fail2ban
 if systemctl is-active --quiet fail2ban; then
@@ -500,7 +507,9 @@ echo "- Protección contra fuerza bruta: Configurada (fail2ban)"
 echo "- Filtro de Proxmox: Configurado"
 echo "- Monitoreo SSH: Activo (crontab cada 2 minutos)"
 echo "- Bot de Telegram: Configurado"
-echo "- Fail2ban con backend systemd: Configurado"
+echo "- Configuración de fail2ban: jail.local creado directamente en /etc/fail2ban/"
+echo "- Fail2ban configurado con backend systemd para todos los servicios"
+echo "- Archivo defaults-debian.conf eliminado para evitar conflictos"
 echo ""
 mensaje "ok" "¡Instalación completada con éxito!"
 echo "Puedes modificar los scripts en /etc/pxe_monitor si necesitas personalizar la configuración."
