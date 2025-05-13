@@ -1,0 +1,11 @@
+[proxmox]
+enabled = true
+port = https,http,8006
+filter = proxmox
+backend = systemd
+#logpath = /var/log/daemon.log
+maxretry = 3
+# 1 hour
+bantime = 100
+#banaction = iptables-multiport[name=Proxmox, port=8006, protocol=tcp]
+action = telegram
