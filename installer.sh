@@ -90,7 +90,7 @@ echo ""
 mensaje "info" "Comprobando dependencias..."
 DEPS_MISSING=0
 
-for dep in jq fail2ban-client curl grep awk sed; do
+for dep in jq fail2ban curl grep awk sed; do
     if ! verificar_comando $dep; then
         DEPS_MISSING=1
     fi
@@ -102,7 +102,7 @@ if [ $DEPS_MISSING -eq 1 ]; then
     apt install -y jq fail2ban curl
     
     # Verificar si se instalaron correctamente
-    if ! verificar_comando jq || ! verificar_comando fail2ban || ! verificar_comando curl; then
+    if ! verificar_comando jq || ! verificar_comando fail2ban-client || ! verificar_comando curl; then
         mensaje "error" "No se pudieron instalar todas las dependencias. Por favor, instálalas manualmente."
         exit 1
     fi
