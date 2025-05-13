@@ -92,7 +92,7 @@ echo ""
 mensaje "info" "Comprobando dependencias..."
 DEPS_MISSING=0
 
-for dep in jq fail2ban-client curl grep awk sed; do
+for dep in git jq fail2ban-client curl grep awk sed; do
     if ! verificar_comando $dep; then
         DEPS_MISSING=1
     fi
@@ -101,10 +101,10 @@ done
 if [ $DEPS_MISSING -eq 1 ]; then
     mensaje "info" "Instalando dependencias faltantes..."
     apt update
-    apt install -y jq fail2ban curl
+    apt install -y git jq fail2ban curl
     
     # Verificar si se instalaron correctamente
-    if ! verificar_comando jq || ! verificar_comando fail2ban || ! verificar_comando curl; then
+    if ! verificar_comando git || ! verificar_comando jq || ! verificar_comando fail2ban || ! verificar_comando curl; then
         mensaje "error" "No se pudieron instalar todas las dependencias. Por favor, instálalas manualmente."
         exit 1
     fi
@@ -123,6 +123,16 @@ if [ ! -d "/etc/pxe_monitor" ]; then
     mensaje "ok" "Directorios creados correctamente"
 else
     mensaje "aviso" "El directorio /etc/pxe_monitor ya existe"
+fi
+
+# Clonar el repositorio de GitHub
+mensaje "info" "Clonando repositorio desde GitHub..."
+TEMP_DIR=$(mktemp -d)
+if git clone https://github.com/C3i-Servicios-Informaticos/pxe_monitor.git "$TEMP_DIR"; then
+    mensaje "ok" "Repositorio clonado correctamente"
+else
+    mensaje "error" "No se pudo clonar el repositorio. Saliendo..."
+    exit 1
 fi
 
 # Solicitar información de Telegram
@@ -149,24 +159,28 @@ copiar_configurar_archivo() {
     reemplazar_token "$destino/$nombre_archivo"
 }
 
-# Copiando los archivos proporcionados
+# Copiando los archivos desde el repositorio clonado
 mensaje "info" "Copiando y configurando archivos..."
 
 # Backup
-copiar_configurar_archivo "bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
-cp "backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
+copiar_configurar_archivo "$TEMP_DIR/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
+cp "$TEMP_DIR/backup_fail.service" "/etc/pxe_monitor/pxe_backup/"
 
 # Bruteforce
-copiar_configurar_archivo "multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
-cp "jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
-cp "telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
+copiar_configurar_archivo "$TEMP_DIR/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
+cp "$TEMP_DIR/jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
+cp "$TEMP_DIR/telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
 
 # VM Monitoring
-copiar_configurar_archivo "ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
-cp "vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
+copiar_configurar_archivo "$TEMP_DIR/ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
+cp "$TEMP_DIR/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 
 # SSH Monitoring
-copiar_configurar_archivo "ssh_monitor.sh" "/etc/pxe_monitor/ssh"
+copiar_configurar_archivo "$TEMP_DIR/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
+
+# Limpiar directorio temporal
+rm -rf "$TEMP_DIR"
+mensaje "ok" "Archivos copiados y directorio temporal eliminado"
 
 # Configurar fail2ban
 mensaje "info" "Configurando fail2ban..."
