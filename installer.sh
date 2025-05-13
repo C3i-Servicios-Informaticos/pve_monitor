@@ -71,16 +71,20 @@ reemplazar_token() {
         return 1
     fi
     
-    # Reemplazar BOT_TOKEN y CHAT_ID con patrones más específicos para evitar sustituciones erróneas
-    sed -i "s|BOT_TOKEN=\"\"|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    sed -i "s|BOT_TOKEN=|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    sed -i "s|TELEGRAM_BOT_TOKEN=\"\"|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    sed -i "s|TELEGRAM_BOT_TOKEN=|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+    # Comprobar el formato actual y reemplazar adecuadamente
+    if grep -q 'BOT_TOKEN=""' "$archivo"; then
+        # Si tiene formato BOT_TOKEN=""
+        sed -i "s|BOT_TOKEN=\"\"|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+        sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    elif grep -q 'BOT_TOKEN=' "$archivo"; then
+        # Si tiene formato BOT_TOKEN=
+        sed -i "s|BOT_TOKEN=|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
+        sed -i "s|CHAT_ID=|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    fi
     
-    sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    sed -i "s|CHAT_ID=|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
+    # Para multi-action.sh, que podría usar TELEGRAM prefijo
+    sed -i "s|TELEGRAM_BOT_TOKEN=\"\"|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
     sed -i "s|TELEGRAM_CHAT_ID=\"\"|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    sed -i "s|TELEGRAM_CHAT_ID=|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
     
     mensaje "ok" "Tokens reemplazados en $archivo"
 }
