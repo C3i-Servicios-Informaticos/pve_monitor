@@ -2,8 +2,6 @@
 
 Sistema de monitorización para entornos Proxmox con alertas a través de Telegram.
 
-![Proxmox Logo](https://www.proxmox.com/images/proxmox/proxmox-logo-color-stacked.png)
-
 ## Descripción
 
 PXE Monitor es un conjunto de herramientas diseñado para supervisar y proteger entornos Proxmox. El sistema incluye:
