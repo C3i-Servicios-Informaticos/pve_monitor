@@ -113,7 +113,15 @@ crear_filtro_proxmox() {
 [Definition]
 failregex = pvedaemon\[.*authentication failure; rhost=<HOST> user=.* msg=.*
             pveproxy\[.*authentication failure; rhost=<HOST> user=.* msg=.*
+            pvedaemon\[.*]: authentication failure; rhost=<HOST> user=.* msg=.*
+            pveproxy\[.*]: authentication failure; rhost=<HOST> user=.* msg=.*
 ignoreregex =
+
+# DEV Notes:
+# Proxmox logs auth failures to daemon.log
+# Example log entries:
+# pvedaemon[1234]: authentication failure; rhost=10.0.0.1 user=admin@pam msg=authentication failure
+# pveproxy[5678]: authentication failure; rhost=10.0.0.1 user=admin@pam msg=authentication failure
 EOF
 
     if [ -f "$filtro_path" ]; then
@@ -263,6 +271,44 @@ mensaje "ok" "Archivos copiados y directorio del repositorio eliminado"
 # Configurar fail2ban
 mensaje "info" "Configurando fail2ban..."
 
+# Asegurarse de que la configuración base de fail2ban esté presente
+if [ ! -f "/etc/fail2ban/jail.conf" ]; then
+    mensaje "aviso" "No se encontró el archivo jail.conf, creando uno básico..."
+    # Crear un archivo jail.conf básico
+    cat > "/etc/fail2ban/jail.conf" << EOF
+[DEFAULT]
+ignoreip = 127.0.0.1/8 ::1
+bantime = 1h
+findtime = 10m
+maxretry = 5
+backend = auto
+usedns = warn
+logencoding = auto
+enabled = false
+mode = normal
+filter = %(__name__)s
+destemail = root@localhost
+sender = root@<fq-hostname>
+mta = sendmail
+protocol = tcp
+chain = <known/chain>
+port = 0:65535
+fail2ban_agent = Fail2Ban/%(fail2ban_version)s
+banaction = iptables-multiport
+banaction_allports = iptables-allports
+action_ = %(banaction)s[name=%(__name__)s, port="%(port)s", protocol="%(protocol)s", chain="%(chain)s"]
+action_mw = %(action_)s
+action_mwl = %(action_)s
+action_cf_mwl = %(action_)s
+action_mb = %(action_)s
+action_mbl = %(action_)s
+action_xarf = %(action_)s
+action = %(action_)s
+EOF
+    chmod 644 "/etc/fail2ban/jail.conf"
+    mensaje "ok" "Archivo jail.conf básico creado"
+fi
+
 # Crear filtro Proxmox para fail2ban (NUEVO)
 crear_filtro_proxmox
 
@@ -276,7 +322,18 @@ fi
 
 # Configurar jail local
 if [ -f "/etc/pxe_monitor/pxe_bruteforce/jail.local" ]; then
-    cp /etc/pxe_monitor/pxe_bruteforce/jail.local /etc/fail2ban/jail.d/proxmox.conf
+    # Modificar la configuración de jail para asegurarse que tenga todos los parámetros necesarios
+    cat > "/etc/fail2ban/jail.d/proxmox.conf" << EOF
+[proxmox]
+enabled = true
+port = https,http,8006
+filter = proxmox
+backend = systemd
+logpath = /var/log/daemon.log
+maxretry = 3
+bantime = 3600
+action = telegram
+EOF
     mensaje "ok" "Configuración de jail para Proxmox añadida"
 fi
 
@@ -290,17 +347,29 @@ chmod +x /etc/pxe_monitor/pxe_bruteforce/multi-action.sh
 chmod +x /etc/pxe_monitor/pxe_vm/ping-instances.sh
 chmod +x /etc/pxe_monitor/ssh/ssh_monitor.sh
 
-# Reiniciar fail2ban
-systemctl restart fail2ban
+# Reiniciar fail2ban con manejo de errores más detallado
+systemctl stop fail2ban
+sleep 2
+fail2ban-client -x stop
+sleep 2
+fail2ban-client -x start
+sleep 3
+systemctl start fail2ban
 # Esperamos un momento para que fail2ban se inicie correctamente
 sleep 3
 if systemctl is-active --quiet fail2ban; then
     mensaje "ok" "Servicio fail2ban reiniciado correctamente"
 else
     mensaje "error" "No se pudo reiniciar el servicio fail2ban"
-    # Mostrar log de error
+    # Mostrar log de error y más información de diagnóstico
     echo "Mostrando los logs de fail2ban:"
     journalctl -u fail2ban -n 10
+    echo "Verificando configuración de fail2ban:"
+    fail2ban-client -d
+    echo "Verificando presencia de archivos de configuración:"
+    ls -la /etc/fail2ban/
+    ls -la /etc/fail2ban/filter.d/
+    ls -la /etc/fail2ban/jail.d/
 fi
 
 # Configurar servicios systemd
