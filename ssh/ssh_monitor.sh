@@ -1,8 +1,8 @@
 #!/bin/bash
 
 logf="/var/log/auth.log"
-BOT_TOKEN="8049940826:AAE5VQeKv29pmeOZDjylC-JGkCghPntGkmg"
-CHAT_ID="-4716952882"
+BOT_TOKEN=""
+CHAT_ID=""
 IP=$(grep "error: maximum" $logf | awk '{print $12}' | head -1)
 msg="Intento de fuerza bruta por ssh bloqueado, ip bloqueada: $IP"
 # Extract failed login attempts and count occurrences per IP
