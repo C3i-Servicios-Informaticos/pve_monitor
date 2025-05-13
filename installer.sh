@@ -234,6 +234,47 @@ cp "$REPO_DIR/pxe_vm/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
 # SSH Monitoring
 copiar_configurar_archivo "$REPO_DIR/ssh/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
 
+# Corregir la ruta del log de SSH en el script de monitoreo
+mensaje "info" "Corrigiendo ruta del log SSH en el script de monitoreo..."
+if [ -f "/etc/pxe_monitor/ssh/ssh_monitor.sh" ]; then
+    # Verificar qué archivo de log SSH existe en el sistema
+    SSH_LOG_PATH=""
+    
+    # Opciones comunes de ubicación del log SSH
+    for log_path in "/var/log/auth.log" "/var/log/secure" "/var/log/audit/audit.log"; do
+        if [ -f "$log_path" ]; then
+            SSH_LOG_PATH="$log_path"
+            break
+        fi
+    done
+    
+    # Si ninguna ubicación estándar funciona, usar journalctl
+    if [ -z "$SSH_LOG_PATH" ]; then
+        mensaje "aviso" "No se encontró archivo de log SSH estándar, se usará journalctl"
+        # Crear un script auxiliar para extraer logs de SSH mediante journalctl
+        cat > /etc/pxe_monitor/ssh/extract_ssh_log.sh << EOF
+#!/bin/bash
+# Script para extraer logs SSH de journalctl
+journalctl -u ssh -u sshd --no-pager -n 1000 > /var/log/ssh_extract.log
+EOF
+        chmod +x /etc/pxe_monitor/ssh/extract_ssh_log.sh
+        
+        # Modificar el crontab para ejecutar primero el extractor y luego el monitor
+        (crontab -l 2>/dev/null || echo "") | grep -v "/etc/pxe_monitor/ssh/" | { cat; echo "*/2 * * * * /etc/pxe_monitor/ssh/extract_ssh_log.sh && /etc/pxe_monitor/ssh/ssh_monitor.sh"; } | crontab -
+        
+        # Crear el archivo de log inicial
+        /etc/pxe_monitor/ssh/extract_ssh_log.sh
+        SSH_LOG_PATH="/var/log/ssh_extract.log"
+        mensaje "ok" "Creado script extractor de logs SSH y archivo de log en $SSH_LOG_PATH"
+    else
+        mensaje "ok" "Encontrado archivo de log SSH en $SSH_LOG_PATH"
+    fi
+    
+    # Modificar el script de monitoreo SSH para usar la ruta correcta
+    sed -i "s|logf=\"/var/log/auth.log\"|logf=\"$SSH_LOG_PATH\"|g" /etc/pxe_monitor/ssh/ssh_monitor.sh
+    mensaje "ok" "Ruta del log SSH actualizada en el script de monitoreo"
+fi
+
 # Limpiar directorio del repositorio
 rm -rf "$REPO_DIR"
 mensaje "ok" "Archivos copiados y directorio del repositorio eliminado"
@@ -292,23 +333,6 @@ maxretry = 3
 bantime = 100
 action = telegram
 EOF
-
-# Deshabilitar el jail de SSH si existe
-mensaje "info" "Deshabilitando jail de SSH..."
-if [ -f "/etc/fail2ban/jail.d/sshd.conf" ]; then
-    sed -i 's/enabled = true/enabled = false/' /etc/fail2ban/jail.d/sshd.conf
-    mensaje "ok" "Jail de SSH deshabilitado"
-elif [ -f "/etc/fail2ban/jail.d/defaults-debian.conf" ]; then
-    # En algunos sistemas Debian, la configuración de SSH está en defaults-debian.conf
-    sed -i '/\[sshd\]/,/^$/ s/enabled = true/enabled = false/' /etc/fail2ban/jail.d/defaults-debian.conf
-    mensaje "ok" "Jail de SSH deshabilitado en configuración Debian"
-fi
-
-# También verificar en jail.local, que podría tener configuración de SSH
-if [ -f "/etc/fail2ban/jail.local" ]; then
-    sed -i '/\[sshd\]/,/^$/ s/enabled = true/enabled = false/' /etc/fail2ban/jail.local
-    mensaje "ok" "Jail de SSH deshabilitado en jail.local si existía"
-fi
 
 if [ -f "/etc/fail2ban/jail.d/proxmox.conf" ]; then
     mensaje "ok" "Configuración de jail para Proxmox añadida"
@@ -427,26 +451,6 @@ if systemctl is-active --quiet fail2ban; then
             mensaje "error" "Jail de Proxmox no encontrado después de reinicio. Verificar configuración manualmente"
         fi
     fi
-    
-    # Verificar que el jail de SSH esté deshabilitado
-    if fail2ban-client status | grep -q "sshd"; then
-        mensaje "aviso" "El jail de SSH está activo. Intentando deshabilitarlo..."
-        if [ -f "/etc/fail2ban/jail.d/sshd.conf" ]; then
-            sed -i 's/enabled = true/enabled = false/' /etc/fail2ban/jail.d/sshd.conf
-        fi
-        if [ -f "/etc/fail2ban/jail.local" ]; then
-            sed -i '/\[sshd\]/,/^$/ s/enabled = true/enabled = false/' /etc/fail2ban/jail.local
-        fi
-        systemctl restart fail2ban
-        sleep 2
-        if ! fail2ban-client status | grep -q "sshd"; then
-            mensaje "ok" "Jail de SSH deshabilitado correctamente"
-        else
-            mensaje "error" "No se pudo deshabilitar el jail de SSH. Revisa manualmente la configuración de fail2ban"
-        fi
-    else
-        mensaje "ok" "Jail de SSH deshabilitado correctamente"
-    fi
 else
     mensaje "error" "Fail2ban no está funcionando correctamente"
     journalctl -u fail2ban -n 5
@@ -471,6 +475,21 @@ if crontab -l | grep -q "/etc/pxe_monitor/ssh/ssh_monitor.sh"; then
     mensaje "ok" "Tarea cron para monitoreo SSH configurada correctamente"
 else
     mensaje "error" "Tarea cron para monitoreo SSH no configurada"
+fi
+
+# Verificar la ruta del log de SSH
+SSH_LOG_PATH=$(grep "logf=" /etc/pxe_monitor/ssh/ssh_monitor.sh | cut -d'"' -f2)
+if [ -f "$SSH_LOG_PATH" ]; then
+    mensaje "ok" "Archivo de log SSH ($SSH_LOG_PATH) encontrado y accesible"
+else
+    mensaje "aviso" "El archivo de log SSH ($SSH_LOG_PATH) no existe. Creando archivo vacío..."
+    touch "$SSH_LOG_PATH"
+    chmod 644 "$SSH_LOG_PATH"
+    if [ -f "$SSH_LOG_PATH" ]; then
+        mensaje "ok" "Archivo de log SSH creado correctamente"
+    else
+        mensaje "error" "No se pudo crear el archivo de log SSH. Verifica permisos."
+    fi
 fi
 
 # Enviar mensaje de prueba a Telegram
