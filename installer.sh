@@ -7,7 +7,11 @@ AMARILLO='\033[1;33m'
 AZUL='\033[0;34m'
 NORMAL='\033[0m'
 
-# Función para imprimir mensajes con colores
+# Directorios principales
+BASE_DIR="/etc/pve_monitor"
+SYSTEMD_DIR="/etc/systemd/system"
+
+# Función para mostrar mensajes
 mensaje() {
     case $1 in
         "info") echo -e "${AZUL}[INFO]${NORMAL} $2" ;;
@@ -17,267 +21,411 @@ mensaje() {
     esac
 }
 
-# Función para verificar si un comando existe
-verificar_comando() {
-    if ! command -v $1 &> /dev/null; then
-        mensaje "error" "El comando $1 no está instalado."
-        return 1
-    else
-        return 0
-    fi
-}
-
-# Función para verificar y mostrar el estado de instalación
-verificar_instalacion() {
-    if [ -d "$1" ]; then
-        mensaje "ok" "$2 ya está instalado."
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Función para pedir el token de Telegram
-pedir_token_telegram() {
-    echo -e "${AZUL}[?]${NORMAL} Por favor, introduce el token del bot de Telegram: "
-    read BOT_TOKEN
-    if [ -z "$BOT_TOKEN" ]; then
-        mensaje "error" "El token no puede estar vacío"
-        pedir_token_telegram
-    else
-        mensaje "ok" "Token guardado: $BOT_TOKEN"
-    fi
-}
-
-# Función para pedir el ID del chat de Telegram
-pedir_chat_id() {
-    echo -e "${AZUL}[?]${NORMAL} Por favor, introduce el ID del chat de Telegram: "
-    read CHAT_ID
-    if [ -z "$CHAT_ID" ]; then
-        mensaje "error" "El ID del chat no puede estar vacío"
-        pedir_chat_id
-    else
-        mensaje "ok" "ID del chat guardado: $CHAT_ID"
-    fi
-}
-
-# Función para reemplazar tokens en un archivo
-reemplazar_token() {
-    local archivo=$1
-    
-    # Asegurarse de que el archivo existe
-    if [ ! -f "$archivo" ]; then
-        mensaje "error" "El archivo $archivo no existe"
-        return 1
-    fi
-    
-    # Verificar el formato actual de BOT_TOKEN y CHAT_ID en el archivo
-    if grep -q 'BOT_TOKEN=""' "$archivo"; then
-        # Formato BOT_TOKEN=""
-        sed -i "s|BOT_TOKEN=\"\"|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    elif grep -q 'BOT_TOKEN=' "$archivo"; then
-        # Formato BOT_TOKEN= (sin comillas)
-        sed -i "s|BOT_TOKEN=|BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    fi
-    
-    if grep -q 'CHAT_ID=""' "$archivo"; then
-        # Formato CHAT_ID=""
-        sed -i "s|CHAT_ID=\"\"|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    elif grep -q 'CHAT_ID=' "$archivo"; then
-        # Formato CHAT_ID= (sin comillas)
-        sed -i "s|CHAT_ID=|CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    fi
-    
-    # Para multi-action.sh, que podría usar TELEGRAM prefijo
-    if grep -q 'TELEGRAM_BOT_TOKEN=""' "$archivo"; then
-        sed -i "s|TELEGRAM_BOT_TOKEN=\"\"|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    elif grep -q 'TELEGRAM_BOT_TOKEN=' "$archivo"; then
-        sed -i "s|TELEGRAM_BOT_TOKEN=|TELEGRAM_BOT_TOKEN=\"$BOT_TOKEN\"|g" "$archivo"
-    fi
-    
-    if grep -q 'TELEGRAM_CHAT_ID=""' "$archivo"; then
-        sed -i "s|TELEGRAM_CHAT_ID=\"\"|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    elif grep -q 'TELEGRAM_CHAT_ID=' "$archivo"; then
-        sed -i "s|TELEGRAM_CHAT_ID=|TELEGRAM_CHAT_ID=\"$CHAT_ID\"|g" "$archivo"
-    fi
-    
-    mensaje "ok" "Tokens reemplazados en $archivo"
-}
-
 # Verificar si se ejecuta como root
 if [ "$EUID" -ne 0 ]; then
     mensaje "error" "Este script debe ejecutarse como root"
     exit 1
 fi
 
-clear
-echo "==========================================================="
-echo "          INSTALADOR DE SISTEMA PXE MONITOR"
-echo "==========================================================="
-echo ""
-mensaje "info" "Este script instalará y configurará el sistema pxe_monitor"
-echo ""
-
-# Comprobar dependencias
-mensaje "info" "Comprobando dependencias..."
-DEPS_MISSING=0
-
-for dep in git jq curl grep awk sed; do
-    if ! verificar_comando $dep; then
-        DEPS_MISSING=1
-    fi
-done
-
-# Verificar fail2ban de manera diferente ya que no es un comando binario
-if ! dpkg -l | grep -q "fail2ban"; then
-    DEPS_MISSING=1
-    mensaje "error" "Fail2ban no está instalado."
-fi
-
-if [ $DEPS_MISSING -eq 1 ]; then
-    mensaje "info" "Instalando dependencias faltantes..."
-    apt update
-    apt install -y git jq fail2ban curl
+# Función para verificar e instalar dependencias
+instalar_dependencias() {
+    mensaje "info" "Verificando dependencias..."
+    local deps=("jq" "curl" "fail2ban" "grep" "awk" "sed")
+    local missing=false
     
-    # Verificar si se instalaron correctamente
-    if ! verificar_comando git || ! verificar_comando jq || ! verificar_comando curl; then
-        mensaje "error" "No se pudieron instalar algunas dependencias. Por favor, instálalas manualmente."
-        exit 1
+    for dep in "${deps[@]}"; do
+        if ! command -v "$dep" &> /dev/null && ! (dpkg -l | grep -q "$dep"); then
+            mensaje "aviso" "Falta dependencia: $dep"
+            missing=true
+        fi
+    done
+    
+    if [ "$missing" = true ]; then
+        mensaje "info" "Instalando dependencias faltantes..."
+        apt update
+        apt install -y jq fail2ban curl
+        
+        # Verificar instalación
+        for dep in "${deps[@]}"; do
+            if ! command -v "$dep" &> /dev/null && ! (dpkg -l | grep -q "$dep"); then
+                mensaje "error" "No se pudo instalar: $dep"
+                return 1
+            fi
+        done
     fi
     
-    # Verificar fail2ban nuevamente
-    if ! dpkg -l | grep -q "fail2ban"; then
-        mensaje "error" "Fail2ban no se pudo instalar. Por favor, instálalo manualmente."
-        exit 1
-    fi
-    
-    mensaje "ok" "Dependencias instaladas correctamente"
-else
     mensaje "ok" "Todas las dependencias están instaladas"
-fi
-
-# Crear directorio principal si no existe
-if [ ! -d "/etc/pxe_monitor" ]; then
-    mkdir -p /etc/pxe_monitor
-    mkdir -p /etc/pxe_monitor/pxe_backup
-    mkdir -p /etc/pxe_monitor/pxe_bruteforce
-    mkdir -p /etc/pxe_monitor/pxe_vm
-    mkdir -p /etc/pxe_monitor/ssh
-    mensaje "ok" "Directorios creados correctamente"
-else
-    mensaje "aviso" "El directorio /etc/pxe_monitor ya existe"
-fi
-
-# Clonar el repositorio de GitHub
-mensaje "info" "Clonando repositorio desde GitHub..."
-REPO_DIR="./pxe_monitor"
-# Eliminar directorio si ya existe
-if [ -d "$REPO_DIR" ]; then
-    rm -rf "$REPO_DIR"
-fi
-
-if git clone https://github.com/C3i-Servicios-Informaticos/pxe_monitor.git "$REPO_DIR"; then
-    mensaje "ok" "Repositorio clonado correctamente"
-else
-    mensaje "error" "No se pudo clonar el repositorio. Saliendo..."
-    exit 1
-fi
-
-# Solicitar información de Telegram
-echo ""
-mensaje "info" "Configuración de Telegram"
-BOT_TOKEN=""
-CHAT_ID=""
-pedir_token_telegram
-pedir_chat_id
-echo ""
-
-# Verificar que los tokens se ingresaron correctamente
-if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
-    mensaje "error" "No se ingresaron correctamente los datos de Telegram. Por favor, ejecuta el script nuevamente."
-    exit 1
-fi
-
-# Función para copiar y configurar un archivo
-copiar_configurar_archivo() {
-    local origen=$1
-    local destino=$2
-    local nombre_archivo=$(basename "$origen")
-    
-    cp "$origen" "$destino"
-    
-    # Si es un script, darle permisos de ejecución
-    if [[ "$nombre_archivo" == *.sh ]]; then
-        chmod +x "$destino/$nombre_archivo"
-    fi
-    
-    # Reemplazar tokens en el archivo
-    reemplazar_token "$destino/$nombre_archivo"
+    return 0
 }
 
-# Copiando los archivos desde el repositorio clonado
-mensaje "info" "Copiando y configurando archivos..."
+# Crear la estructura de directorios optimizada
+crear_estructura() {
+    mensaje "info" "Creando estructura de directorios optimizada..."
+    
+    mkdir -p "$BASE_DIR"
+    mkdir -p "$BASE_DIR/lib"
+    mkdir -p "$BASE_DIR/modules/backup"
+    mkdir -p "$BASE_DIR/modules/security"
+    mkdir -p "$BASE_DIR/modules/vm"
+    
+    mensaje "ok" "Estructura de directorios creada"
+    return 0
+}
 
-# Backup
-copiar_configurar_archivo "$REPO_DIR/pxe_backup/bak_deal.sh" "/etc/pxe_monitor/pxe_backup"
+# Función para configurar Telegram
+configurar_telegram() {
+    mensaje "info" "Configuración de Telegram"
+    
+    echo -e "${AZUL}[?]${NORMAL} Introduce el token del bot de Telegram:"
+    read -r BOT_TOKEN
+    
+    echo -e "${AZUL}[?]${NORMAL} Introduce el ID del chat de Telegram:"
+    read -r CHAT_ID
+    
+    if [ -z "$BOT_TOKEN" ] || [ -z "$CHAT_ID" ]; then
+        mensaje "error" "Token o chat ID no pueden estar vacíos"
+        return 1
+    fi
+    
+    # Crear archivo de configuración centralizado
+    cat > "$BASE_DIR/config.env" << EOF
+# Configuración de Telegram
+BOT_TOKEN="$BOT_TOKEN"
+CHAT_ID="$CHAT_ID"
 
-# Bruteforce
-copiar_configurar_archivo "$REPO_DIR/pxe_bruteforce/multi-action.sh" "/etc/pxe_monitor/pxe_bruteforce"
-cp "$REPO_DIR/pxe_bruteforce/jail.local" "/etc/pxe_monitor/pxe_bruteforce/"
-cp "$REPO_DIR/pxe_bruteforce/telegram.conf" "/etc/pxe_monitor/pxe_bruteforce/"
+# Configuración de Monitoreo de Backups
+BACKUP_CHECK_INTERVAL=120  # segundos
+BACKUP_DIR="/var/lib/vz/dump/"
 
-# VM Monitoring
-copiar_configurar_archivo "$REPO_DIR/pxe_vm/ping-instances.sh" "/etc/pxe_monitor/pxe_vm"
-cp "$REPO_DIR/pxe_vm/vm_fail.service" "/etc/pxe_monitor/pxe_vm/"
+# Configuración de Monitoreo de VMs
+VM_CHECK_INTERVAL=300      # segundos
+VM_RESTART_DELAY=5         # segundos
 
-# SSH Monitoring
-copiar_configurar_archivo "$REPO_DIR/ssh/ssh_monitor.sh" "/etc/pxe_monitor/ssh"
+# Configuración de Seguridad
+BAN_TIME=600               # segundos
+MAX_RETRY_PROXMOX=3
+MAX_RETRY_SSH=4
+SSH_FINDTIME=600           # segundos
+EOF
+    
+    # Reemplazar tokens en configuración de fail2ban
+    cp "$BASE_DIR/modules/security/telegram.conf" "$BASE_DIR/modules/security/telegram.conf.tmp"
+    sed -i "s|BOT_TOKEN_PLACEHOLDER|$BOT_TOKEN|g" "$BASE_DIR/modules/security/telegram.conf.tmp" 
+    sed -i "s|CHAT_ID_PLACEHOLDER|$CHAT_ID|g" "$BASE_DIR/modules/security/telegram.conf.tmp"
+    mv "$BASE_DIR/modules/security/telegram.conf.tmp" "$BASE_DIR/modules/security/telegram.conf"
+    
+    mensaje "ok" "Configuración de Telegram completada"
+    return 0
+}
 
-# Crear los archivos de servicio y temporizador de backup
-mensaje "info" "Creando archivos de servicio y temporizador para monitoreo de backups..."
+# Función para crear los archivos del sistema optimizado
+crear_archivos_optimizados() {
+    mensaje "info" "Creando archivos optimizados..."
+    
+    # Biblioteca de funciones comunes
+    cat > "$BASE_DIR/lib/common.sh" << 'EOF'
+#!/bin/bash
+# Cargar configuración
+source /etc/pve_monitor/config.env
 
-# Crear el archivo backup_fail.service con la nueva configuración
-cat > /etc/pxe_monitor/pxe_backup/backup_fail.service << EOF
-[Unit]
-Description=Script de monitoreo de backups
-After=network.target
+# Función para enviar mensajes a Telegram
+send_telegram_message() {
+    local message="$1"
+    local keyboard="$2"
+    
+    if [ -n "$keyboard" ]; then
+        curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+             -d "chat_id=$CHAT_ID" \
+             -d "text=$message" \
+             -d "reply_markup=$keyboard"
+    else
+        curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" \
+             -d "chat_id=$CHAT_ID" \
+             -d "text=$message"
+    fi
+}
 
-[Service]
-Type=oneshot
-ExecStart=/etc/pxe_monitor/pxe_backup/bak_deal.sh
-RemainAfterExit=no
+# Función para crear teclados inline para Telegram
+create_inline_keyboard() {
+    local options=("$@")
+    local keyboard='{"inline_keyboard":['
+    
+    # Crear botones con pares de [texto, callback_data]
+    local buttons=""
+    for ((i=0; i<${#options[@]}; i+=2)); do
+        if [ "$i" -gt 0 ]; then
+            buttons+=","
+        fi
+        buttons+="{\"text\":\"${options[i]}\",\"callback_data\":\"${options[i+1]}\"}"
+    done
+    
+    keyboard+="[$buttons]]}"
+    echo "$keyboard"
+}
 
-[Install]
-WantedBy=multi-user.target
+# Función para esperar respuesta de botón en Telegram
+wait_telegram_callback() {
+    local message_id="$1"
+    local timeout="${2:-60}"  # Timeout por defecto 60 segundos
+    local offset=0
+    local start_time=$(date +%s)
+    
+    while true; do
+        # Verificar si se ha excedido el timeout
+        local current_time=$(date +%s)
+        if [ $((current_time - start_time)) -gt "$timeout" ]; then
+            echo "timeout"
+            return 1
+        fi
+        
+        # Obtener actualizaciones
+        local updates=$(curl -s "https://api.telegram.org/bot$BOT_TOKEN/getUpdates?offset=$offset&timeout=1")
+        
+        # Procesar actualizaciones
+        if [ -n "$(echo $updates | jq '.result')" ] && [ "$(echo $updates | jq '.result | length')" -gt 0 ]; then
+            for i in $(seq 0 $(echo $updates | jq '.result | length - 1')); do
+                local update_id=$(echo $updates | jq -r ".result[$i].update_id")
+                offset=$((update_id + 1))
+                
+                # Verificar si es una callback para nuestro mensaje
+                if echo $updates | jq -r ".result[$i].callback_query" | grep -q "$message_id"; then
+                    local callback_id=$(echo $updates | jq -r ".result[$i].callback_query.id")
+                    local data=$(echo $updates | jq -r ".result[$i].callback_query.data")
+                    
+                    # Confirmar recepción de callback
+                    curl -s "https://api.telegram.org/bot$BOT_TOKEN/answerCallbackQuery?callback_query_id=$callback_id" > /dev/null
+                    
+                    echo "$data"
+                    return 0
+                fi
+            done
+        fi
+        
+        sleep 1
+    done
+}
+
+# Función para log
+log_message() {
+    local level="$1"
+    local message="$2"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [$level] $message"
+}
+
+# Verificar si un proceso está en ejecución
+is_process_running() {
+    local process_name="$1"
+    pgrep -f "$process_name" > /dev/null
+    return $?
+}
 EOF
 
-# Crear el archivo backup_fail.timer
-cat > /etc/pxe_monitor/pxe_backup/backup_fail.timer << EOF
-[Unit]
-Description=Ejecuta el monitoreo de backups cada 2 minutos
+    # Módulo de monitoreo de backups
+    cat > "$BASE_DIR/modules/backup/monitor.sh" << 'EOF'
+#!/bin/bash
+# Cargar funciones comunes
+source /etc/pve_monitor/lib/common.sh
 
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=2min
-Unit=backup_fail.service
+log_message "INFO" "Iniciando monitoreo de backups"
 
-[Install]
-WantedBy=timers.target
+# Verificar si hay backups en ejecución
+backup_process=$(ps -aux | grep -i vzdump | grep -v grep)
+
+if [ -z "$backup_process" ]; then
+    log_message "INFO" "No hay backups en ejecución"
+    exit 0
+fi
+
+log_message "INFO" "Backup en ejecución, iniciando monitorización"
+
+# Obtener VMID del backup
+vmid=$(echo "$backup_process" | awk '{print $12}' | awk -F ':' '{print $7}')
+alerta_enviada=false
+mensaje="⚠️ Posible problema con el backup en la VM $vmid - El tamaño no está aumentando"
+
+# Monitorizar el progreso del backup
+espacio=$(ls -lh "$BACKUP_DIR" | grep vma | awk '{print $5}')
+[ -n "$espacio" ] && byte_espacio_anterior=$(numfmt --from=iec "$espacio")
+
+while [ -n "$(ps -aux | grep -i vzdump | grep -v grep)" ]; do
+    log_message "INFO" "Backup en progreso..."
+    
+    # Obtener el tamaño actual del archivo de backup
+    espacio=$(ls -lh "$BACKUP_DIR" | grep vma | awk '{print $5}')
+    [ -z "$espacio" ] && continue
+    
+    byte_espacio_actual=$(numfmt --from=iec "$espacio")
+    
+    # Verificar si el tamaño ha aumentado
+    if [ -n "$byte_espacio_anterior" ] && [ "$byte_espacio_actual" -le "$byte_espacio_anterior" ] && [ "$alerta_enviada" = false ]; then
+        log_message "WARNING" "El tamaño del backup no ha cambiado"
+        send_telegram_message "$mensaje"
+        alerta_enviada=true
+    fi
+    
+    byte_espacio_anterior="$byte_espacio_actual"
+    sleep 10
+done
+
+log_message "INFO" "Backup finalizado"
+exit 0
 EOF
 
-# Limpiar directorio del repositorio
-rm -rf "$REPO_DIR"
-mensaje "ok" "Archivos copiados y directorio del repositorio eliminado"
+    # Módulo de monitoreo de VMs/CTs
+    cat > "$BASE_DIR/modules/vm/monitor.sh" << 'EOF'
+#!/bin/bash
+# Cargar funciones comunes
+source /etc/pve_monitor/lib/common.sh
 
-# Configurar fail2ban
-mensaje "info" "Configurando fail2ban..."
+# Leer instancias excluidas de los argumentos
+excluded_instances=("$@")
+log_message "INFO" "Instancias excluidas: ${excluded_instances[*]}"
 
-# Crear el filtro de Proxmox para fail2ban
-mensaje "info" "Creando filtro de Proxmox para fail2ban..."
-cat > /etc/fail2ban/filter.d/proxmox.conf << EOF
-# Fallos de autenticación para Proxmox
-# Fecha: $(date +%Y-%m-%d)
+# Teclado inline para preguntar si reiniciar VM
+vm_keyboard=$(create_inline_keyboard "Si" "restart_yes" "No" "restart_no")
 
+# Función para verificar si una instancia está excluida
+is_excluded() {
+    local instance="$1"
+    for excluded in "${excluded_instances[@]}"; do
+        if [ "$instance" = "$excluded" ]; then
+            return 0  # True, está excluida
+        fi
+    done
+    return 1  # False, no está excluida
+}
+
+# Función para obtener IP de una instancia
+get_instance_ip() {
+    local instance="$1"
+    local type="$2"
+    
+    if [ "$type" = "container" ]; then
+        pct exec "$instance" ip a s dev eth0 | awk '/inet / {print $2}' | cut -d/ -f1
+    else  # VM
+        qm guest cmd "$instance" network-get-interfaces 2>/dev/null | grep -Eo "([0-9]{1,3}\.){3}[0-9]{1,3}" | grep -E "192\.|10\.|172\." | head -n 1
+    fi
+}
+
+# Función para verificar si una instancia debe ser monitoreada
+should_monitor_instance() {
+    local instance="$1"
+    local config_cmd="$2"
+    
+    # Verificar si es template o no está configurada para arrancar
+    local onboot=$($config_cmd "$instance" | grep -q "onboot: 0" || ( ! $config_cmd "$instance" | grep -q "onboot" ) && echo "true" || echo "false")
+    local template=$($config_cmd "$instance" | grep -q "template:" && echo "true" || echo "false")
+    
+    if [ "$onboot" = "true" ] || [ "$template" = "true" ]; then
+        return 1  # No monitorear
+    fi
+    
+    return 0  # Monitorear
+}
+
+# Función principal de monitoreo
+monitor_instances() {
+    log_message "INFO" "Iniciando ciclo de monitoreo"
+    
+    # Obtener lista de contenedores
+    local containers=$(pct list | awk 'NR>1 {print $1}')
+    
+    # Obtener lista de VMs
+    local vms=$(qm list | awk 'NR>1 {print $1}')
+    
+    # Monitorear todas las instancias
+    for instance in $containers $vms; do
+        # Saltar instancias excluidas
+        if is_excluded "$instance"; then
+            log_message "INFO" "Saltando instancia $instance (excluida)"
+            continue
+        fi
+        
+        # Determinar tipo y comando de configuración
+        local instance_type=""
+        local config_cmd=""
+        
+        if pct status "$instance" >/dev/null 2>&1; then
+            instance_type="container"
+            config_cmd="pct config"
+        else
+            instance_type="vm"
+            config_cmd="qm config"
+        fi
+        
+        # Verificar si la instancia debe ser monitoreada
+        if ! should_monitor_instance "$instance" "$config_cmd"; then
+            log_message "INFO" "Saltando instancia $instance (no configurada para monitoreo)"
+            continue
+        fi
+        
+        # Obtener IP de la instancia
+        local ip=$(get_instance_ip "$instance" "$instance_type")
+        
+        if [ -z "$ip" ]; then
+            log_message "WARNING" "No se pudo obtener IP para $instance_type $instance"
+            continue
+        fi
+        
+        # Verificar si la instancia responde
+        if ! ping -c 3 "$ip" >/dev/null 2>&1; then
+            log_message "WARNING" "$instance_type $instance ($ip) no responde"
+            
+            if [ "$instance_type" = "container" ]; then
+                # Reiniciar contenedor automáticamente
+                log_message "INFO" "Reiniciando contenedor $instance"
+                pct stop "$instance" >/dev/null 2>&1
+                sleep "$VM_RESTART_DELAY"
+                pct start "$instance" >/dev/null 2>&1
+                send_telegram_message "🔄 Contenedor $instance reiniciado automáticamente"
+            else
+                # Verificar estado de la VM
+                if qm status "$instance" | grep -q "status: running"; then
+                    log_message "WARNING" "VM $instance está en ejecución pero no responde"
+                    mensaje="⚠️ VM $instance no responde. ¿Desea reiniciarla?"
+                else
+                    log_message "WARNING" "VM $instance no está en ejecución"
+                    mensaje="ℹ️ VM $instance no está encendida. ¿Desea encenderla?"
+                fi
+                
+                # Enviar mensaje con botones y esperar respuesta
+                response=$(send_telegram_message "$mensaje" "$vm_keyboard")
+                message_id=$(echo "$response" | jq -r '.result.message_id')
+                
+                # Esperar respuesta (timeout 60 segundos)
+                choice=$(wait_telegram_callback "$message_id" 60)
+                
+                if [ "$choice" = "restart_yes" ]; then
+                    log_message "INFO" "Reiniciando VM $instance"
+                    if qm status "$instance" | grep -q "status: running"; then
+                        qm stop "$instance" >/dev/null 2>&1
+                        sleep "$VM_RESTART_DELAY"
+                    fi
+                    qm start "$instance" >/dev/null 2>&1
+                    send_telegram_message "🔄 VM $instance reiniciada/encendida"
+                else
+                    log_message "INFO" "Usuario decidió no reiniciar VM $instance"
+                    send_telegram_message "⏹️ No se reiniciará la VM $instance"
+                fi
+            fi
+        else
+            log_message "INFO" "$instance_type $instance ($ip) responde correctamente"
+        fi
+    done
+    
+    log_message "INFO" "Ciclo de monitoreo completado"
+}
+
+# Bucle principal
+while true; do
+    monitor_instances
+    log_message "INFO" "Esperando $VM_CHECK_INTERVAL segundos para el próximo ciclo"
+    sleep "$VM_CHECK_INTERVAL"
+done
+EOF
+
+    # Configuración de Fail2Ban para Proxmox
+    cat > "$BASE_DIR/modules/security/proxmox.conf" << 'EOF'
 [Definition]
 failregex = pvedaemon\[.*authentication failure; rhost=<HOST> user=.* msg=.*
             pveproxy\[.*authentication failure; rhost=<HOST> user=.* msg=.*
@@ -286,28 +434,107 @@ failregex = pvedaemon\[.*authentication failure; rhost=<HOST> user=.* msg=.*
 ignoreregex =
 EOF
 
-if [ -f "/etc/fail2ban/filter.d/proxmox.conf" ]; then
-    mensaje "ok" "Filtro de Proxmox creado correctamente"
-else
-    mensaje "error" "No se pudo crear el filtro de Proxmox"
-fi
+    # Configuración de Acción Telegram para Fail2Ban
+    cat > "$BASE_DIR/modules/security/telegram.conf" << 'EOF'
+[Definition]
+actionstart =
+actionstop =
+actionban = curl -s -X POST "https://api.telegram.org/bot<bot_token>/sendMessage" -d "chat_id=<chat_id>" -d "text=🛑 Fail2Ban: Bloqueo IP <ip> (servicio: <name>)"
+actionunban =
 
-cp "/etc/pxe_monitor/pxe_bruteforce/telegram.conf" "/etc/fail2ban/action.d/"
-if [ -f "/etc/fail2ban/action.d/telegram.conf" ]; then
-    mensaje "ok" "Acción de Telegram configurada para fail2ban"
-else
-    mensaje "error" "No se pudo configurar la acción de Telegram"
-fi
+[Init]
+bot_token = BOT_TOKEN_PLACEHOLDER
+chat_id = CHAT_ID_PLACEHOLDER
+EOF
 
-# Crear jail.local directamente en /etc/fail2ban/
-mensaje "info" "Creando archivo jail.local principal en /etc/fail2ban/..."
-cat > /etc/fail2ban/jail.local << EOF
+    # Dar permisos de ejecución a los scripts
+    chmod +x "$BASE_DIR/lib/common.sh"
+    chmod +x "$BASE_DIR/modules/backup/monitor.sh"
+    chmod +x "$BASE_DIR/modules/vm/monitor.sh"
+    
+    mensaje "ok" "Archivos optimizados creados correctamente"
+    return 0
+}
+
+# Configurar servicios systemd
+configurar_servicios() {
+    mensaje "info" "Configurando servicios systemd..."
+    
+    # Servicio de monitoreo de backups
+    cat > "$SYSTEMD_DIR/backup-monitor.service" << EOF
+[Unit]
+Description=Servicio de monitoreo de backups
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=$BASE_DIR/modules/backup/monitor.sh
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Timer de monitoreo de backups
+    cat > "$SYSTEMD_DIR/backup-monitor.timer" << EOF
+[Unit]
+Description=Ejecuta el monitoreo de backups cada 2 minutos
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Unit=backup-monitor.service
+
+[Install]
+WantedBy=timers.target
+EOF
+
+    # Servicio de monitoreo de VMs/CTs
+    cat > "$SYSTEMD_DIR/vm-monitor.service" << EOF
+[Unit]
+Description=Servicio de monitoreo de VMs y contenedores
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=$BASE_DIR/modules/vm/monitor.sh
+Restart=on-failure
+RestartSec=30
+User=root
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Habilitar y arrancar servicios
+    systemctl daemon-reload
+    
+    mensaje "info" "Habilitando servicios..."
+    systemctl enable backup-monitor.timer
+    systemctl start backup-monitor.timer
+    systemctl enable vm-monitor.service
+    systemctl start vm-monitor.service
+    
+    mensaje "ok" "Servicios configurados y activados"
+    return 0
+}
+
+# Configurar fail2ban
+configurar_fail2ban() {
+    mensaje "info" "Configurando fail2ban..."
+    
+    # Crear filtro de Proxmox
+    cp "$BASE_DIR/modules/security/proxmox.conf" /etc/fail2ban/filter.d/proxmox.conf
+    
+    # Crear acción de Telegram
+    cp "$BASE_DIR/modules/security/telegram.conf" /etc/fail2ban/action.d/telegram.conf
+    
+    # Configurar jail.local
+    cat > /etc/fail2ban/jail.local << EOF
 [DEFAULT]
-# "ignoreip" puede ser una dirección IP, una máscara CIDR o un host DNS
 ignoreip = 127.0.0.1/8
 bantime = 600
 maxretry = 3
-# Cambiamos el backend a systemd para mejorar el rendimiento
 backend = systemd
 
 [proxmox]
@@ -319,7 +546,6 @@ maxretry = 3
 bantime = 100
 action = telegram
 
-# Configuración de SSH con backend systemd
 [sshd]
 enabled = true
 filter = sshd
@@ -328,199 +554,123 @@ backend = systemd
 maxretry = 4
 findtime = 600
 bantime = 600
+action = iptables-multiport[name=SSH, port=ssh, protocol=tcp]
+        telegram
 EOF
 
-if [ -f "/etc/fail2ban/jail.local" ]; then
-    mensaje "ok" "Archivo jail.local creado correctamente en /etc/fail2ban/"
-else
-    mensaje "error" "No se pudo crear el archivo jail.local en /etc/fail2ban/"
-fi
-
-# Asegurar que todos los scripts tienen permisos de ejecución
-chmod +x /etc/pxe_monitor/pxe_backup/bak_deal.sh
-chmod +x /etc/pxe_monitor/pxe_bruteforce/multi-action.sh
-chmod +x /etc/pxe_monitor/pxe_vm/ping-instances.sh
-chmod +x /etc/pxe_monitor/ssh/ssh_monitor.sh
-mensaje "ok" "Permisos de scripts verificados"
-
-# Eliminar archivo defaults-debian.conf que puede interferir con nuestra configuración
-if [ -f "/etc/fail2ban/jail.d/defaults-debian.conf" ]; then
-    mensaje "info" "Eliminando archivo defaults-debian.conf..."
-    rm -f /etc/fail2ban/jail.d/defaults-debian.conf
-    mensaje "ok" "Archivo defaults-debian.conf eliminado correctamente"
-fi
-
-# Reiniciar fail2ban
-systemctl restart fail2ban
-if systemctl is-active --quiet fail2ban; then
-    mensaje "ok" "Servicio fail2ban reiniciado correctamente"
-else
-    mensaje "error" "No se pudo reiniciar el servicio fail2ban. Verificando logs..."
-    journalctl -u fail2ban -n 5
-    # Intentar solucionar problemas comunes de fail2ban
-    touch /var/log/fail2ban.log
-    chmod 644 /var/log/fail2ban.log
+    # Eliminar configuración por defecto que podría interferir
+    [ -f "/etc/fail2ban/jail.d/defaults-debian.conf" ] && rm -f /etc/fail2ban/jail.d/defaults-debian.conf
+    
+    # Reiniciar fail2ban
     systemctl restart fail2ban
-    if systemctl is-active --quiet fail2ban; then
-        mensaje "ok" "Servicio fail2ban reiniciado correctamente después de corrección adicional"
-    else
-        mensaje "error" "No se pudo reiniciar el servicio fail2ban. Verifica manualmente con 'journalctl -u fail2ban'"
-    fi
-fi
-
-# Configurar servicios systemd
-mensaje "info" "Configurando servicios..."
-
-# Servicio y temporizador de backup
-if [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.service" ] && [ -f "/etc/pxe_monitor/pxe_backup/backup_fail.timer" ]; then
-    # Copiar archivos al directorio de systemd
-    cp /etc/pxe_monitor/pxe_backup/backup_fail.service /etc/systemd/system/
-    cp /etc/pxe_monitor/pxe_backup/backup_fail.timer /etc/systemd/system/
     
-    # Detener y deshabilitar el servicio anterior si existe
-    if systemctl is-active --quiet backup_fail.service; then
-        systemctl stop backup_fail.service
-    fi
-    if systemctl is-enabled --quiet backup_fail.service; then
-        systemctl disable backup_fail.service
+    mensaje "ok" "Fail2ban configurado correctamente"
+    return 0
+}
+
+# Verificar la instalación
+verificar_instalacion() {
+    mensaje "info" "Verificando instalación..."
+    local errores=0
+    
+    # Verificar servicios
+    if ! systemctl is-active --quiet backup-monitor.timer; then
+        mensaje "error" "El temporizador backup-monitor.timer no está activo"
+        errores=$((errores + 1))
     fi
     
-    # Habilitar y arrancar el temporizador
-    systemctl daemon-reload
-    systemctl enable backup_fail.timer
-    systemctl start backup_fail.timer
+    if ! systemctl is-active --quiet vm-monitor.service; then
+        mensaje "error" "El servicio vm-monitor.service no está activo"
+        errores=$((errores + 1))
+    fi
     
-    if systemctl is-active --quiet backup_fail.timer; then
-        mensaje "ok" "Servicio y temporizador de backup configurados y activados"
+    # Verificar fail2ban
+    if ! systemctl is-active --quiet fail2ban; then
+        mensaje "error" "El servicio fail2ban no está activo"
+        errores=$((errores + 1))
     else
-        mensaje "error" "No se pudo iniciar el temporizador backup_fail. Verificando configuración..."
-        # Mostrar los logs para diagnosticar el problema
-        journalctl -u backup_fail.timer -n 10
-    fi
-else
-    mensaje "error" "No se encontraron los archivos de configuración del servicio y temporizador"
-fi
-
-# Servicio de monitoreo de VMs
-if [ -f "/etc/pxe_monitor/pxe_vm/vm_fail.service" ]; then
-    # Actualizar la ruta en el archivo de servicio
-    sed -i "s|ExecStart=.*|ExecStart=/etc/pxe_monitor/pxe_vm/ping-instances.sh|g" /etc/pxe_monitor/pxe_vm/vm_fail.service
-    cp /etc/pxe_monitor/pxe_vm/vm_fail.service /etc/systemd/system/
-    systemctl daemon-reload
-    systemctl enable vm_fail.service
-    systemctl start vm_fail.service
-    if systemctl is-active --quiet vm_fail.service; then
-        mensaje "ok" "Servicio de monitoreo de VMs configurado y activado"
-    else
-        mensaje "error" "No se pudo iniciar el servicio vm_fail. Verificando configuración..."
-        # Asegurar que el script tiene los permisos correctos
-        chmod +x /etc/pxe_monitor/pxe_vm/ping-instances.sh
-        systemctl restart vm_fail.service
-        if systemctl is-active --quiet vm_fail.service; then
-            mensaje "ok" "Servicio de monitoreo de VMs configurado y activado después de corrección"
-        else
-            mensaje "error" "No se pudo iniciar el servicio vm_fail. Verifica manualmente con 'journalctl -u vm_fail'"
-        fi
-    fi
-fi
-
-# Configurar crontab para ssh_monitor
-mensaje "info" "Configurando cron para monitoreo SSH..."
-(crontab -l 2>/dev/null || echo "") | grep -v "/etc/pxe_monitor/ssh/ssh_monitor.sh" | { cat; echo "*/2 * * * * /etc/pxe_monitor/ssh/ssh_monitor.sh"; } | crontab -
-sed -i '/^MaxAuthTries /{s/.*/MaxAuthTries 4/;q};$aMaxAuthTries 4' /etc/ssh/sshd_config
-systemctl restart sshd
-mensaje "ok" "Tarea cron para monitoreo SSH configurada"
-
-# Verificar instalación
-echo ""
-mensaje "info" "Verificando la instalación..."
-
-# Verificar servicios
-if systemctl is-active --quiet backup_fail.timer; then
-    mensaje "ok" "Temporizador backup_fail está activo"
-else
-    mensaje "error" "Temporizador backup_fail no está activo"
-    # Intentar diagnosticar el problema
-    mensaje "info" "Consultando estado del temporizador..."
-    systemctl status backup_fail.timer
-fi
-
-if systemctl is-active --quiet vm_fail.service; then
-    mensaje "ok" "Servicio vm_fail está activo"
-else
-    mensaje "error" "Servicio vm_fail no está activo"
-fi
-
-# Verificar jail.local
-if [ -f "/etc/fail2ban/jail.local" ]; then
-    mensaje "ok" "Archivo jail.local creado correctamente en /etc/fail2ban/"
-else
-    mensaje "error" "El archivo jail.local no existe en /etc/fail2ban/"
-fi
-
-# Verificar fail2ban
-if systemctl is-active --quiet fail2ban; then
-    mensaje "ok" "Fail2ban está funcionando correctamente"
-    if fail2ban-client status | grep -q "proxmox"; then
-        mensaje "ok" "Jail de Proxmox configurado correctamente"
-    else
-        mensaje "aviso" "Jail de Proxmox no encontrado en fail2ban. Reiniciando servicio..."
-        systemctl restart fail2ban
+        # Dar tiempo a que fail2ban se inicialice completamente
         sleep 2
-        if fail2ban-client status | grep -q "proxmox"; then
-            mensaje "ok" "Jail de Proxmox configurado correctamente después de reinicio"
+        
+        # Verificar configuración de fail2ban con mejor manejo de errores
+        JAIL_CHECK=$(fail2ban-client status 2>/dev/null || echo "ERROR")
+        if echo "$JAIL_CHECK" | grep -q "ERROR"; then
+            mensaje "aviso" "No se pudo verificar la configuración de fail2ban, pero el servicio está activo"
+        elif ! echo "$JAIL_CHECK" | grep -q "proxmox"; then
+            mensaje "error" "Jail de Proxmox no configurado en fail2ban"
+            errores=$((errores + 1))
         else
-            mensaje "error" "Jail de Proxmox no encontrado después de reinicio. Verificar configuración manualmente"
+            mensaje "ok" "Fail2ban configurado correctamente con jail de Proxmox"
         fi
     fi
-else
-    mensaje "error" "Fail2ban no está funcionando correctamente"
-    journalctl -u fail2ban -n 5
-fi
-
-# Verificar filtro de Proxmox
-if [ -f "/etc/fail2ban/filter.d/proxmox.conf" ]; then
-    mensaje "ok" "Filtro de Proxmox está instalado"
-    # Verificar que el filtro esté funcionando
-    fail2ban-regex /var/log/daemon.log /etc/fail2ban/filter.d/proxmox.conf --print-all-matched > /dev/null 2>&1
-    if [ $? -eq 0 ]; then
-        mensaje "ok" "Filtro de Proxmox está funcionando correctamente"
-    else
-        mensaje "aviso" "Filtro de Proxmox podría no estar funcionando correctamente, verifica los logs manualmente"
+    
+    # Enviar mensaje de prueba a Telegram
+    source "$BASE_DIR/config.env"
+    local mensaje_prueba="✅ Sistema PVE Monitor instalado correctamente en $(hostname)"
+    
+    if ! curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" -d "chat_id=$CHAT_ID" -d "text=$mensaje_prueba" > /dev/null; then
+        mensaje "error" "No se pudo enviar mensaje de prueba a Telegram"
+        errores=$((errores + 1))
     fi
-else
-    mensaje "error" "Filtro de Proxmox no está instalado"
-fi
+    
+    if [ "$errores" -eq 0 ]; then
+        mensaje "ok" "Instalación verificada correctamente"
+        return 0
+    else
+        mensaje "error" "Se encontraron $errores errores durante la verificación"
+        return 1
+    fi
+}
 
-# Verificar crontab
-if crontab -l | grep -q "/etc/pxe_monitor/ssh/ssh_monitor.sh"; then
-    mensaje "ok" "Tarea cron para monitoreo SSH configurada correctamente"
-else
-    mensaje "error" "Tarea cron para monitoreo SSH no configurada"
-fi
+# Función principal de instalación
+main() {
+    clear
+    echo "==========================================================="
+    echo "          INSTALADOR DE SISTEMA PVE MONITOR"
+    echo "==========================================================="
+    echo ""
+    mensaje "info" "Este script instalará y configurará el sistema PVE Monitor optimizado"
+    echo ""
+    
+    # Instalar dependencias
+    if ! instalar_dependencias; then
+        mensaje "error" "Error al instalar dependencias. Abortando..."
+        exit 1
+    fi
+    
+    # Crear estructura de directorios optimizada
+    crear_estructura
+    
+    # Crear archivos del sistema optimizado
+    crear_archivos_optimizados
+    
+    # Configurar Telegram
+    if ! configurar_telegram; then
+        mensaje "error" "Error al configurar Telegram. Abortando..."
+        exit 1
+    fi
+    
+    # Configurar servicios
+    configurar_servicios
+    
+    # Configurar fail2ban
+    configurar_fail2ban
+    
+    # Verificar instalación
+    if verificar_instalacion; then
+        mensaje "ok" "¡Instalación completada con éxito!"
+        echo ""
+        echo "Resumen de la instalación:"
+        echo "- Monitoreo de backups: Activo (temporizador systemd cada 2 minutos)"
+        echo "- Monitoreo de VMs: Activo (servicio systemd)"
+        echo "- Protección contra fuerza bruta: Configurada (fail2ban)"
+        echo "- Notificaciones: Configuradas (Telegram)"
+        echo ""
+        mensaje "info" "Puede modificar la configuración en $BASE_DIR/config.env"
+    else
+        mensaje "aviso" "La instalación se completó con advertencias. Revise los mensajes anteriores."
+    fi
+}
 
-# Enviar mensaje de prueba a Telegram
-mensaje "info" "Enviando mensaje de prueba a Telegram..."
-MENSAJE_PRUEBA="✅ Sistema PXE Monitor instalado correctamente en $(hostname)"
-curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" -d "chat_id=$CHAT_ID" -d "text=$MENSAJE_PRUEBA" > /dev/null
-if [ $? -eq 0 ]; then
-    mensaje "ok" "Mensaje de prueba enviado correctamente"
-else
-    mensaje "error" "No se pudo enviar el mensaje de prueba. Verifica los datos del bot y el chat ID"
-fi
-
-echo ""
-mensaje "info" "Resumen de la instalación:"
-echo "- Directorio principal: /etc/pxe_monitor"
-echo "- Monitoreo de backups: Activo (temporizador systemd cada 2 minutos)"
-echo "- Monitoreo de VMs: Activo (servicio systemd)"
-echo "- Protección contra fuerza bruta: Configurada (fail2ban)"
-echo "- Filtro de Proxmox: Configurado"
-echo "- Monitoreo SSH: Activo (crontab cada 2 minutos)"
-echo "- Bot de Telegram: Configurado"
-echo "- Configuración de fail2ban: jail.local creado directamente en /etc/fail2ban/"
-echo "- Fail2ban configurado con backend systemd para todos los servicios"
-echo "- Archivo defaults-debian.conf eliminado para evitar conflictos"
-echo ""
-mensaje "ok" "¡Instalación completada con éxito!"
-echo "Puedes modificar los scripts en /etc/pxe_monitor si necesitas personalizar la configuración."
+# Ejecutar instalación
+main
