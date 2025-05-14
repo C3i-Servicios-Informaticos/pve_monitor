@@ -10,7 +10,7 @@ Sistema de monitorización y gestión para Proxmox Virtual Environment (PVE) con
 
 - **Monitoreo de backups**: Detecta problemas durante la creación de copias de seguridad.
 - **Monitoreo de VMs/Contenedores**: Verifica el estado de las máquinas virtuales y contenedores, permitiendo reiniciar automáticamente los que no responden.
-- **Protección contra fuerza bruta**: Integración con Fail2ban para proteger tu servidor Proxmox.
+- **Protección contra fuerza bruta**: Integración con Fail2ban para proteger SSH y la interfaz web de Proxmox.
 - **Notificaciones por Telegram**: Recibe alertas y toma acciones directamente desde tu dispositivo móvil.
 
 ## 🔧 Requisitos
@@ -19,16 +19,6 @@ Sistema de monitorización y gestión para Proxmox Virtual Environment (PVE) con
 - Acceso root al servidor
 - Bot de Telegram (token y chat ID)
 - Conexión a Internet
-
-## 💻 Dependencias
-
-El script instalará automáticamente las siguientes dependencias:
-- jq
-- curl
-- fail2ban
-- grep
-- awk
-- sed
 
 ## 🚀 Instalación
 
@@ -113,12 +103,8 @@ systemctl status vm-monitor.service
 
 # Fail2ban
 systemctl status fail2ban
-```
 
-Para reiniciar un servicio:
-
-```bash
-sudo systemctl restart [nombre-del-servicio]
+fail2ban-client status
 ```
 
 ## 🛡️ Seguridad
@@ -129,44 +115,3 @@ El sistema configura Fail2ban con dos reglas principales:
 2. **sshd**: Protege el acceso SSH al servidor.
 
 En ambos casos, se enviarán notificaciones a Telegram cuando se bloquee una IP.
-
-## 💬 Comandos de Telegram
-
-Al recibir alertas sobre VMs o contenedores que no responden, podrás:
-
-- Reiniciar la VM/contenedor con un solo clic
-- Ignorar la alerta
-
-## 🔍 Solución de problemas
-
-### No se reciben notificaciones en Telegram
-
-1. Verifica que el token del bot y el chat ID sean correctos en `/etc/pve_monitor/config.env`
-2. Asegúrate de que el servidor tenga acceso a Internet
-3. Ejecuta una prueba manual:
-
-```bash
-source /etc/pve_monitor/config.env
-curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" -d "chat_id=$CHAT_ID" -d "text=Mensaje de prueba"
-```
-
-### Servicio de monitoreo no funciona
-
-Verifica los logs del sistema:
-
-```bash
-journalctl -u vm-monitor.service -n 50
-journalctl -u backup-monitor.service -n 50
-```
-
-## 📄 Licencia
-
-Este proyecto está licenciado bajo la Licencia [MIT](LICENSE)
-
-## 👥 Contribuciones
-
-Las contribuciones son bienvenidas. Por favor, abre un issue o pull request para sugerencias y mejoras.
-
----
-
-**Nota**: Este sistema está diseñado para funcionar en servidores Proxmox. No se garantiza su funcionamiento en otros entornos.
