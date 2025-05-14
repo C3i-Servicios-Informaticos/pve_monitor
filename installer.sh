@@ -321,11 +321,11 @@ action = telegram
 
 # Configuración de SSH con backend systemd
 [sshd]
-enabled = false
+enabled = true
 filter = sshd
 port = ssh
 backend = systemd
-maxretry = 5
+maxretry = 4
 findtime = 600
 bantime = 600
 EOF
