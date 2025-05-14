@@ -1,152 +1,172 @@
-# PXE Monitor
+# PVE Monitor
 
-Sistema de monitorización para entornos Proxmox con alertas a través de Telegram.
+Sistema de monitorización y gestión para Proxmox Virtual Environment (PVE) con notificaciones a través de Telegram.
 
-## Descripción
+![Proxmox](https://img.shields.io/badge/Proxmox-E57000?style=for-the-badge&logo=proxmox&logoColor=white)
+![Bash](https://img.shields.io/badge/Bash-4EAA25?style=for-the-badge&logo=gnu-bash&logoColor=white)
+![Telegram](https://img.shields.io/badge/Telegram-2CA5E0?style=for-the-badge&logo=telegram&logoColor=white)
 
-PXE Monitor es un conjunto de herramientas diseñado para supervisar y proteger entornos Proxmox. El sistema incluye:
+## 📋 Características
 
-- **Monitorización de backups**: Detecta problemas durante la ejecución de copias de seguridad.
-- **Protección contra ataques de fuerza bruta a Proxmox**: Bloquea intentos de acceso no autorizado a la interfaz web de Proxmox.
-- **Monitorización de VMs/CTs**: Supervisa el estado de las máquinas virtuales y contenedores, ofreciendo reactivación automática.
-- **Monitorización SSH**: Detecta y alerta sobre intentos de acceso por fuerza bruta SSH.
+- **Monitoreo de backups**: Detecta problemas durante la creación de copias de seguridad.
+- **Monitoreo de VMs/Contenedores**: Verifica el estado de las máquinas virtuales y contenedores, permitiendo reiniciar automáticamente los que no responden.
+- **Protección contra fuerza bruta**: Integración con Fail2ban para proteger tu servidor Proxmox.
+- **Notificaciones por Telegram**: Recibe alertas y toma acciones directamente desde tu dispositivo móvil.
 
-Todas las alertas se envían a través de Telegram, permitiendo una respuesta rápida ante cualquier incidente.
+## 🔧 Requisitos
 
-## Requisitos previos
-
-- Sistema basado en Debian/Ubuntu (Proxmox VE)
+- Proxmox Virtual Environment (PVE)
+- Acceso root al servidor
+- Bot de Telegram (token y chat ID)
 - Conexión a Internet
-- Bot de Telegram configurado (token y chat_id)
-- Permisos de administrador (root)
 
-### Dependencias
+## 💻 Dependencias
 
-- `jq`: Procesamiento de JSON
-- `fail2ban`: Protección contra ataques de fuerza bruta
-- `curl`: Transferencia de datos
-- `git`: Descarga del repositorio
+El script instalará automáticamente las siguientes dependencias:
+- jq
+- curl
+- fail2ban
+- grep
+- awk
+- sed
 
-## Instalación rápida
+## 🚀 Instalación
 
-Para instalar PXE Monitor, descarga y ejecuta installer.sh
-
-```bash
-curl -sSL https://raw.githubusercontent.com/C3i-Servicios-Informaticos/pxe_monitor/main/installer.sh -o installer.sh && chmod +x installer.sh && ./installer.sh
-```
-
-Durante la instalación, se le solicitará:
-- Token del bot de Telegram
-- ID del chat de Telegram
-
-El instalador configurará automáticamente todos los componentes necesarios.
-
-## Componentes del sistema
-
-### 1. Monitorización de backups
-
-Supervisa el progreso de las copias de seguridad y alerta cuando detecta problemas, como estancamiento en el tamaño del archivo de backup.
-
-**Archivos:**
-- `/etc/pxe_monitor/pxe_backup/bak_deal.sh`
-- `/etc/systemd/system/backup_fail.service`
-- `/etc/systemd/system/backup_fail.timer`
-
-### 2. Protección contra fuerza bruta (Web Proxmox)
-
-Configura fail2ban para detectar y bloquear intentos de acceso no autorizado a la interfaz web de Proxmox.
-
-**Archivos:**
-- `/etc/pxe_monitor/pxe_bruteforce/multi-action.sh`
-- `/etc/fail2ban/jail.local`
-- `/etc/fail2ban/action.d/telegram.conf`
-- `/etc/fail2ban/filter.d/proxmox.conf`
-
-### 3. Monitorización de VMs/CTs
-
-Supervisa el estado de máquinas virtuales y contenedores mediante ping. Si una VM/CT no responde, ofrece la opción de reiniciarla a través de una notificación interactiva de Telegram.
-
-**Archivos:**
-- `/etc/pxe_monitor/pxe_vm/ping-instances.sh`
-- `/etc/systemd/system/vm_fail.service`
-
-### 4. Monitorización SSH
-
-Detecta intentos de acceso por fuerza bruta a través de SSH y envía alertas por Telegram.
-
-**Archivos:**
-- `/etc/pxe_monitor/ssh/ssh_monitor.sh`
-- Entrada en crontab (ejecutando cada 2 minutos)
-
-## Uso y configuración
-
-### Exclusión de VMs/CTs específicas
-
-Para excluir VMs o contenedores de la monitorización, edite el archivo de servicio:
+1. Descarga el script de instalación:
 
 ```bash
-nano /etc/systemd/system/vm_fail.service
+wget https://raw.githubusercontent.com/tu-usuario/pve-monitor/main/install.sh
 ```
 
-Y modifique la línea `ExecStart` para incluir los IDs que desea excluir:
+2. Dale permisos de ejecución:
+
+```bash
+chmod +x install.sh
+```
+
+3. Ejecuta el script como usuario root:
+
+```bash
+sudo ./install.sh
+```
+
+4. Sigue las instrucciones en pantalla para configurar el bot de Telegram.
+
+## ⚙️ Configuración
+
+Después de la instalación, puedes modificar la configuración en el archivo:
 
 ```
-ExecStart=/etc/pxe_monitor/pxe_vm/ping-instances.sh 100 101 102
+/etc/pve_monitor/config.env
 ```
 
-Donde 100, 101, 102 son los IDs de las VMs/CTs que desea excluir.
+### Parámetros configurables:
 
-### Verificación de estado
+| Parámetro | Descripción | Valor por defecto |
+|-----------|-------------|-------------------|
+| BOT_TOKEN | Token del bot de Telegram | Configurado durante instalación |
+| CHAT_ID | ID del chat de Telegram | Configurado durante instalación |
+| BACKUP_CHECK_INTERVAL | Intervalo de verificación de backups (segundos) | 120 |
+| BACKUP_DIR | Directorio de backups | /var/lib/vz/dump/ |
+| VM_CHECK_INTERVAL | Intervalo de verificación de VMs (segundos) | 300 |
+| VM_RESTART_DELAY | Tiempo de espera entre apagar y encender una VM (segundos) | 5 |
+| BAN_TIME | Tiempo de baneo para intentos fallidos (segundos) | 600 |
+| MAX_RETRY_PROXMOX | Intentos fallidos permitidos para Proxmox | 3 |
+| MAX_RETRY_SSH | Intentos fallidos permitidos para SSH | 4 |
+| SSH_FINDTIME | Periodo de tiempo para contar intentos SSH (segundos) | 600 |
+
+## 📦 Estructura del sistema
+
+```
+/etc/pve_monitor/
+├── config.env                   # Configuración principal
+├── lib/
+│   └── common.sh               # Funciones comunes
+└── modules/
+    ├── backup/
+    │   └── monitor.sh          # Monitor de backups
+    ├── security/
+    │   ├── proxmox.conf        # Configuración Fail2ban para Proxmox
+    │   └── telegram.conf       # Configuración de notificaciones Telegram
+    └── vm/
+        └── monitor.sh          # Monitor de VMs y contenedores
+```
+
+## 🔄 Servicios
+
+El sistema instala y configura los siguientes servicios:
+
+1. **backup-monitor.timer**: Ejecuta el monitoreo de backups cada 2 minutos.
+2. **vm-monitor.service**: Servicio que monitorea constantemente las VMs y contenedores.
+3. **fail2ban**: Configurado con reglas específicas para proteger Proxmox y SSH.
+
+### Gestión de servicios
 
 Para verificar el estado de los servicios:
 
 ```bash
-# Servicio de monitorización de backups
-systemctl status backup_fail.service
+# Monitor de backups
+systemctl status backup-monitor.timer
 
-# Servicio de monitorización de VMs
-systemctl status vm_fail.service
+# Monitor de VMs
+systemctl status vm-monitor.service
 
-# Estado de fail2ban
-fail2ban-client status
-fail2ban-client status proxmox
-
-# Listado de crontab
-crontab -l
+# Fail2ban
+systemctl status fail2ban
 ```
 
-## Resolución de problemas
-
-### Los mensajes de Telegram no llegan
-
-1. Verifique la conexión a Internet
-2. Compruebe que el token del bot es correcto
-3. Asegúrese de que el bot está en el chat especificado por el chat_id
-4. Verifique logs
-
-### Fail2ban no bloquea intentos
-
-1. Verifique que fail2ban está en ejecución: `systemctl status fail2ban`
-2. Compruebe la configuración: `fail2ban-client status proxmox`
-
-## Desinstalación
-
-Para desinstalar PXE Monitor, ejecute:
+Para reiniciar un servicio:
 
 ```bash
-systemctl stop backup_fail.service
-systemctl stop vm_fail.service
-systemctl disable backup_fail.service
-systemctl disable vm_fail.service
-rm -f /etc/systemd/system/backup_fail.service
-rm -f /etc/systemd/system/vm_fail.service
-rm -f /etc/fail2ban/action.d/telegram.conf
-rm -f /etc/fail2ban/jail.d/proxmox.conf
-rm -rf /etc/pxe_monitor
-crontab -l | grep -v "ssh_monitor.sh" | crontab -
-systemctl restart fail2ban
+sudo systemctl restart [nombre-del-servicio]
 ```
+
+## 🛡️ Seguridad
+
+El sistema configura Fail2ban con dos reglas principales:
+
+1. **proxmox**: Protege la interfaz web de Proxmox bloqueando intentos de inicio de sesión fallidos.
+2. **sshd**: Protege el acceso SSH al servidor.
+
+En ambos casos, se enviarán notificaciones a Telegram cuando se bloquee una IP.
+
+## 💬 Comandos de Telegram
+
+Al recibir alertas sobre VMs o contenedores que no responden, podrás:
+
+- Reiniciar la VM/contenedor con un solo clic
+- Ignorar la alerta
+
+## 🔍 Solución de problemas
+
+### No se reciben notificaciones en Telegram
+
+1. Verifica que el token del bot y el chat ID sean correctos en `/etc/pve_monitor/config.env`
+2. Asegúrate de que el servidor tenga acceso a Internet
+3. Ejecuta una prueba manual:
+
+```bash
+source /etc/pve_monitor/config.env
+curl -s -X POST "https://api.telegram.org/bot$BOT_TOKEN/sendMessage" -d "chat_id=$CHAT_ID" -d "text=Mensaje de prueba"
+```
+
+### Servicio de monitoreo no funciona
+
+Verifica los logs del sistema:
+
+```bash
+journalctl -u vm-monitor.service -n 50
+journalctl -u backup-monitor.service -n 50
+```
+
+## 📄 Licencia
+
+Este proyecto está licenciado bajo la Licencia [MIT](LICENSE)
+
+## 👥 Contribuciones
+
+Las contribuciones son bienvenidas. Por favor, abre un issue o pull request para sugerencias y mejoras.
 
 ---
 
-Desarrollado por [C3i Servicios Informáticos](https://github.com/C3i-Servicios-Informaticos)
+**Nota**: Este sistema está diseñado para funcionar en servidores Proxmox. No se garantiza su funcionamiento en otros entornos.
