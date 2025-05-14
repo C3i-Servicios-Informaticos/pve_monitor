@@ -1,11 +1,26 @@
+[DEFAULT]
+# "ignoreip" puede ser una dirección IP, una máscara CIDR o un host DNS
+ignoreip = 127.0.0.1/8
+bantime = 600
+maxretry = 3
+# Cambiamos el backend a systemd para mejorar el rendimiento
+backend = systemd
+
 [proxmox]
 enabled = true
 port = https,http,8006
 filter = proxmox
 backend = systemd
-#logpath = /var/log/daemon.log
 maxretry = 3
-# 1 hour
 bantime = 100
-#banaction = iptables-multiport[name=Proxmox, port=8006, protocol=tcp]
 action = telegram
+
+# Configuración de SSH con backend systemd
+[sshd]
+enabled = true
+filter = sshd
+port = ssh
+backend = systemd
+maxretry = 4
+findtime = 600
+bantime = 600
