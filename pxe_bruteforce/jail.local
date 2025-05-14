@@ -24,3 +24,5 @@ backend = systemd
 maxretry = 4
 findtime = 600
 bantime = 600
+action = iptables-multiport[name=SSH, port=ssh, protocol=tcp]
+        telegram
