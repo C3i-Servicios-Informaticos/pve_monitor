@@ -146,7 +146,6 @@ rm -rf /etc/pxe_monitor
 crontab -l | grep -v "ssh_monitor.sh" | crontab -
 systemctl restart fail2ban
 ```
--
 
 ---
 
