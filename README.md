@@ -7,7 +7,7 @@ Sistema de monitorización para entornos Proxmox con alertas a través de Telegr
 PXE Monitor es un conjunto de herramientas diseñado para supervisar y proteger entornos Proxmox. El sistema incluye:
 
 - **Monitorización de backups**: Detecta problemas durante la ejecución de copias de seguridad.
-- **Protección contra ataques de fuerza bruta**: Bloquea intentos de acceso no autorizado a la interfaz web de Proxmox.
+- **Protección contra ataques de fuerza bruta a Proxmox**: Bloquea intentos de acceso no autorizado a la interfaz web de Proxmox.
 - **Monitorización de VMs/CTs**: Supervisa el estado de las máquinas virtuales y contenedores, ofreciendo reactivación automática.
 - **Monitorización SSH**: Detecta y alerta sobre intentos de acceso por fuerza bruta SSH.
 
@@ -25,6 +25,7 @@ Todas las alertas se envían a través de Telegram, permitiendo una respuesta r�
 - `jq`: Procesamiento de JSON
 - `fail2ban`: Protección contra ataques de fuerza bruta
 - `curl`: Transferencia de datos
+- `git`: Descarga del repositorio
 
 ## Instalación rápida
 
@@ -49,6 +50,7 @@ Supervisa el progreso de las copias de seguridad y alerta cuando detecta problem
 **Archivos:**
 - `/etc/pxe_monitor/pxe_backup/bak_deal.sh`
 - `/etc/systemd/system/backup_fail.service`
+- `/etc/systemd/system/backup_fail.timer`
 
 ### 2. Protección contra fuerza bruta (Web Proxmox)
 
@@ -56,10 +58,9 @@ Configura fail2ban para detectar y bloquear intentos de acceso no autorizado a l
 
 **Archivos:**
 - `/etc/pxe_monitor/pxe_bruteforce/multi-action.sh`
-- `/etc/pxe_monitor/pxe_bruteforce/jail.local`
-- `/etc/pxe_monitor/pxe_bruteforce/telegram.conf`
+- `/etc/fail2ban/jail.local`
 - `/etc/fail2ban/action.d/telegram.conf`
-- `/etc/fail2ban/jail.d/proxmox.conf`
+- `/etc/fail2ban/filter.d/proxmox.conf`
 
 ### 3. Monitorización de VMs/CTs
 
@@ -90,7 +91,7 @@ nano /etc/systemd/system/vm_fail.service
 Y modifique la línea `ExecStart` para incluir los IDs que desea excluir:
 
 ```
-ExecStart=/etc/pxe_monitor/ping-instances.sh 100 101 102
+ExecStart=/etc/pxe_monitor/pxe_vm/ping-instances.sh 100 101 102
 ```
 
 Donde 100, 101, 102 son los IDs de las VMs/CTs que desea excluir.
@@ -109,6 +110,9 @@ systemctl status vm_fail.service
 # Estado de fail2ban
 fail2ban-client status
 fail2ban-client status proxmox
+
+# Listado de crontab
+crontab -l
 ```
 
 ## Resolución de problemas
@@ -118,13 +122,12 @@ fail2ban-client status proxmox
 1. Verifique la conexión a Internet
 2. Compruebe que el token del bot es correcto
 3. Asegúrese de que el bot está en el chat especificado por el chat_id
-4. Verifique logs: `journalctl -u backup_fail.service` o `journalctl -u vm_fail.service`
+4. Verifique logs
 
 ### Fail2ban no bloquea intentos
 
 1. Verifique que fail2ban está en ejecución: `systemctl status fail2ban`
 2. Compruebe la configuración: `fail2ban-client status proxmox`
-3. Revise los logs: `tail -f /var/log/fail2ban.log`
 
 ## Desinstalación
 
@@ -143,13 +146,6 @@ rm -rf /etc/pxe_monitor
 crontab -l | grep -v "ssh_monitor.sh" | crontab -
 systemctl restart fail2ban
 ```
-
-## Contribuciones
-
-Las contribuciones son bienvenidas. Por favor, envíe sus pull requests o abra issues para discutir los cambios propuestos.
-
-## Licencia
-
 -
 
 ---
