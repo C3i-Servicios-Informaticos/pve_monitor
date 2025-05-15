@@ -31,13 +31,13 @@ wget https://raw.githubusercontent.com/C3i-Servicios-Informaticos/pxe_monitor/re
 2. Dale permisos de ejecución:
 
 ```bash
-chmod +x install.sh
+chmod +x installer.sh
 ```
 
 3. Ejecuta el script como usuario root:
 
 ```bash
-sudo ./install.sh
+sudo ./installer.sh
 ```
 
 4. Sigue las instrucciones en pantalla para configurar el bot de Telegram.
