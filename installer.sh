@@ -322,7 +322,27 @@ should_monitor_instance() {
     
     return 0  # Monitorear
 }
-
+#Enviar la pregunta por telegram
+asking_telegram() {
+ mensaje="ℹ️ VM $instance no está encendida. ¿Desea encenderla?"
+ #Enviar mensaje con botones y esperar respuesta
+ response=$(send_telegram_message "$mensaje" "$vm_keyboard")
+ message_id=$(echo "$response" | jq -r '.result.message_id')
+ # Esperar respuesta (timeout 60 segundos)
+ choice=$(wait_telegram_callback "$message_id" 60)
+ if [ "$choice" = "restart_yes" ]; then
+   log_message "INFO" "Reiniciando VM $instance"
+   if qm status "$instance" | grep -q "status: running"; then
+    qm stop "$instance" >/dev/null 2>&1
+    sleep "$VM_RESTART_DELAY"
+   fi
+   qm start "$instance" >/dev/null 2>&1
+   send_telegram_message "🔄 VM $instance reiniciada/encendida"
+ else
+   log_message "INFO" "Usuario decidió no reiniciar VM $instance"
+   send_telegram_message "⏹️ No se reiniciará la VM $instance"
+ fi
+}
 # Función principal de monitoreo
 monitor_instances() {
     log_message "INFO" "Iniciando ciclo de monitoreo"
@@ -364,6 +384,7 @@ monitor_instances() {
         
         if [ -z "$ip" ]; then
             log_message "WARNING" "No se pudo obtener IP para $instance_type $instance"
+	    asking_telegram
             continue
         fi
         
@@ -381,32 +402,12 @@ monitor_instances() {
             else
                 # Verificar estado de la VM
                 if qm status "$instance" | grep -q "status: running"; then
-                    log_message "WARNING" "VM $instance está en ejecución pero no responde"
-                    mensaje="⚠️ VM $instance no responde. ¿Desea reiniciarla?"
-                else
+                    log_message "WARNING" "VM $instance está en ejecución pero no responde"   
+	    	else
                     log_message "WARNING" "VM $instance no está en ejecución"
                     mensaje="ℹ️ VM $instance no está encendida. ¿Desea encenderla?"
                 fi
-                
-                # Enviar mensaje con botones y esperar respuesta
-                response=$(send_telegram_message "$mensaje" "$vm_keyboard")
-                message_id=$(echo "$response" | jq -r '.result.message_id')
-                
-                # Esperar respuesta (timeout 60 segundos)
-                choice=$(wait_telegram_callback "$message_id" 60)
-                
-                if [ "$choice" = "restart_yes" ]; then
-                    log_message "INFO" "Reiniciando VM $instance"
-                    if qm status "$instance" | grep -q "status: running"; then
-                        qm stop "$instance" >/dev/null 2>&1
-                        sleep "$VM_RESTART_DELAY"
-                    fi
-                    qm start "$instance" >/dev/null 2>&1
-                    send_telegram_message "🔄 VM $instance reiniciada/encendida"
-                else
-                    log_message "INFO" "Usuario decidió no reiniciar VM $instance"
-                    send_telegram_message "⏹️ No se reiniciará la VM $instance"
-                fi
+                asking_telegram
             fi
         else
             log_message "INFO" "$instance_type $instance ($ip) responde correctamente"
@@ -544,7 +545,8 @@ filter = proxmox
 backend = systemd
 maxretry = 3
 bantime = 100
-action = telegram
+action = iptables-multiport[name=proxmox, port=8006, protocol=tcp]
+	telegram
 
 [sshd]
 enabled = true
